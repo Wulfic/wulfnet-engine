@@ -42,7 +42,9 @@ WulfNet Engine is a **fully-featured, AAA-grade physics and game engine** design
 | **Data-Oriented Design (DOD)** | Maximize cache efficiency with Structure of Arrays (SoA) over Array of Structures (AoS) |
 | **Entity Component System (ECS)** | Decouple data from behavior for parallelization and cache coherence |
 | **Zero-Cost Abstractions** | Compile-time polymorphism over runtime virtual dispatch |
-| **GPU-First Compute** | Offload physics calculations to GPU compute shaders |
+| **GPU-First Compute** | Offload physics calculations to GPU compute shaders (AMD RDNA3/NVIDIA Ada architecture optimized) |
+| **Comprehensive Logging** | Extensive logging at all levels for debugging; every system must log its state transitions, errors, and performance metrics |
+| **Test World Driven Development** | Interactive test world with player controller to validate all physics systems in real-time |
 
 ### 1.2 Core Systems Architecture
 
@@ -87,7 +89,7 @@ WulfNet Engine is a **fully-featured, AAA-grade physics and game engine** design
 
 ### 1.4 Massively Parallel Job System (Multi-threading)
 
-The job system is designed to **scale linearly to 128+ hardware threads** with minimal contention.
+The job system is designed to **scale linearly to 256 hardware threads** with minimal contention. Modern single-socket CPUs (AMD Threadripper, Intel Xeon W) can support up to 256 threads, and the engine is designed to fully utilize them.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -95,11 +97,11 @@ The job system is designed to **scale linearly to 128+ hardware threads** with m
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐│
-│  │                         THREAD POOL (N = Hardware Threads)                   ││
+│  │                         THREAD POOL (N = Hardware Threads, up to 256)        ││
 │  │  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐         ┌───────┐ ┌───────┐        ││
-│  │  │ W[0]  │ │ W[1]  │ │ W[2]  │ │ W[3]  │   ...   │W[126] │ │W[127] │        ││
-│  │  │ Core0 │ │ Core0 │ │ Core1 │ │ Core1 │         │Core63 │ │Core63 │        ││
-│  │  │ SMT0  │ │ SMT1  │ │ SMT0  │ │ SMT1  │         │ SMT0  │ │ SMT1  │        ││
+│  │  │ W[0]  │ │ W[1]  │ │ W[2]  │ │ W[3]  │   ...   │W[254] │ │W[255] │        ││
+│  │  │ Core0 │ │ Core0 │ │ Core1 │ │ Core1 │         │Core127│ │Core127│        ││
+│  │  │ SMT0  │ │ SMT1  │ │ SMT0  │ │ SMT1  │         │ SMT0  │ │ SMT1  │        │|
 │  │  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘         └───┬───┘ └───┬───┘        ││
 │  │      │         │         │         │                 │         │            ││
 │  │      ▼         ▼         ▼         ▼                 ▼         ▼            ││
@@ -131,10 +133,11 @@ The job system is designed to **scale linearly to 128+ hardware threads** with m
 |---------|----------------|--------|
 | **Lock-Free Work Stealing** | Chase-Lev deque per thread | Zero contention on push, minimal on steal |
 | **Fiber-Based Coroutines** | Lightweight 64KB stack fibers | Suspend/resume without OS overhead |
-| **NUMA Awareness** | Thread-to-core affinity, local memory | 2-3x memory bandwidth on multi-socket |
+| **Thread Affinity** | Pin workers to specific cores | Maximize L1/L2 cache hits |
 | **Batch Processing** | SIMD-width job batches (8/16/32) | Amortize scheduling overhead |
 | **Continuation Stealing** | Steal pending continuations | Keep caches hot |
 | **Adaptive Spinning** | Spin → Yield → Sleep progression | Balance latency vs power |
+| **Comprehensive Logging** | Per-job timing, steal stats, queue depths | Debug and optimize job distribution |
 
 #### 1.4.2 Parallel Job Patterns
 
@@ -164,28 +167,29 @@ T parallelReduce(T* data, uint32_t count, T identity, ReduceFunc<T> reduce) {
 }
 ```
 
-#### 1.4.3 Thread Affinity & NUMA Optimization
+#### 1.4.3 Thread Affinity & Core Pinning
 
 ```cpp
-// Detect and configure for NUMA topology
+// Configure job system for maximum core utilization (up to 256 threads)
 void initializeJobSystem() {
-    NumaTopology numa = queryNumaTopology();
+    SystemInfo sysInfo = Platform::getSystemInfo();
     
-    // Example: 2-socket system with 64 cores each (128 threads total)
-    // Socket 0: Cores 0-31  (Threads 0-63)
-    // Socket 1: Cores 32-63 (Threads 64-127)
+    WULFNET_LOG_INFO("JobSystem", "Detected {} logical cores", sysInfo.numLogicalCores);
     
-    for (uint32_t node = 0; node < numa.nodeCount; node++) {
-        for (uint32_t core : numa.nodes[node].cores) {
-            // Pin worker threads to cores
-            Worker* worker = createWorker(core);
-            worker->setAffinity(core);
-            worker->setPreferredMemoryNode(node);
-            
-            // Allocate per-thread data on local NUMA node
-            worker->localArena = numaAlloc(node, ARENA_SIZE);
-        }
+    // Create worker threads (one per logical core, minus main thread)
+    u32 numWorkers = min(sysInfo.numLogicalCores - 1, 255u);  // Max 255 workers + main
+    
+    for (u32 i = 0; i < numWorkers; i++) {
+        Worker* worker = createWorker(i);
+        worker->setAffinity(i + 1);  // Core 0 reserved for main thread
+        
+        // Per-thread local arena for cache-friendly allocations
+        worker->localArena = Memory::allocAligned(ARENA_SIZE, 64);
+        
+        WULFNET_LOG_DEBUG("JobSystem", "Worker {} pinned to core {}", i, i + 1);
     }
+    
+    WULFNET_LOG_INFO("JobSystem", "Initialized {} worker threads", numWorkers);
 }
 ```
 
@@ -197,15 +201,17 @@ void initializeJobSystem() {
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  T=0ms    ┌─────────────────────────────────────────────────────────────────┐   │
-│           │ BROADPHASE (All 128 threads)                                     │   │
+│           │ BROADPHASE (All N threads, up to 256)                            │   │
 │           │ - Parallel BVH update (parallel prefix + sort)                   │   │
 │           │ - Parallel spatial hashing                                       │   │
+│           │ - Logs: pair count, tree depth, rebuild time                     │   │
 │           └─────────────────────────────────────────────────────────────────┘   │
 │                                     │                                            │
 │  T=1ms    ┌─────────────────────────▼─────────────────────────────────────────┐ │
-│           │ NARROWPHASE (All 128 threads)                                      │ │
+│           │ NARROWPHASE (All N threads, up to 256)                             │ │
 │           │ - Parallel collision detection per pair                           │ │
 │           │ - Contact manifold generation                                      │ │
+│           │ - Logs: contact count, GJK iterations, penetration depths          │ │
 │           └───────────────────────────────────────────────────────────────────┘ │
 │                                     │                                            │
 │  T=3ms    ┌─────────────────────────▼─────────────────────────────────────────┐ │
@@ -224,17 +230,19 @@ void initializeJobSystem() {
 │           └───────────────────────────────────────────────────────────────────┘ │
 │                                     │                                            │
 │  T=8ms    ┌─────────────────────────▼─────────────────────────────────────────┐ │
-│           │ INTEGRATION & SUBSTEPS (All 128 threads)                           │ │
+│           │ INTEGRATION & SUBSTEPS (All N threads, up to 256)                  │ │
 │           │ - Position/velocity integration                                    │ │
 │           │ - Soft body substeps (parallel constraints)                        │ │
 │           │ - Fluid substeps (GPU async compute)                               │ │
+│           │ - Logs: max velocity, sleeping bodies, substep count               │ │
 │           └───────────────────────────────────────────────────────────────────┘ │
 │                                     │                                            │
 │  T=12ms   ┌─────────────────────────▼─────────────────────────────────────────┐ │
 │           │ SYNC & CALLBACKS (Minimal, event dispatch)                        │ │
+│           │ - Logs: collision events, trigger events, constraint breaks        │ │
 │           └───────────────────────────────────────────────────────────────────┘ │
 │                                                                                  │
-│  T<16.67ms ✓ Frame Complete                                                     │
+│  T<16.67ms ✓ Frame Complete (with detailed timing log per phase)                │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1103,7 +1111,61 @@ Physics LOD System (All at 60 Hz update rate, reduced fidelity):
 | Math | Custom SIMD library + GLM reference |
 | Build | CMake + Ninja |
 
-### 6.2 Third-Party Libraries (Optional Integration)
+### 6.2 Modern GPU Feature Support
+
+#### 6.2.1 AMD RDNA3/RDNA4 Features
+
+| Feature | Use Case | Implementation |
+|---------|----------|----------------|
+| **Mesh Shaders** | GPU-driven rendering, culling | Custom meshlet pipeline |
+| **Ray Tracing (DXR 1.1)** | Shadows, reflections, GI | Hybrid RT with rasterization fallback |
+| **Variable Rate Shading** | Performance optimization | Foveated rendering, motion-based VRS |
+| **Sampler Feedback** | Texture streaming | Virtual texturing with residency maps |
+| **Async Compute** | Parallel GPU workloads | Physics compute overlapped with rendering |
+| **Wave Operations** | Parallel reductions, scans | Physics solver optimizations |
+| **GPU Work Graphs** | Dynamic GPU dispatch | Particle system management |
+
+#### 6.2.2 NVIDIA Ada/Blackwell Features
+
+| Feature | Use Case | Implementation |
+|---------|----------|----------------|
+| **CUDA Compute** | Physics simulation | SPH fluids, MPM deformables |
+| **OptiX 8.0** | High-quality ray tracing | Acoustic simulation, global illumination |
+| **DLSS 4 / Frame Gen** | Performance upscaling | Quality at lower native resolution |
+| **Shader Execution Reordering** | RT performance | Coherent ray batching |
+| **Warp Shuffle** | Intra-warp communication | Fast parallel reductions |
+| **Tensor Cores** | AI/ML acceleration | Physics prediction, denoising |
+| **NvLink (optional)** | Multi-GPU | Large-scale simulations |
+
+#### 6.2.3 Cross-Vendor Abstractions
+
+```cpp
+// GPU capability detection and abstraction
+struct GPUCapabilities {
+    bool supportsRayTracing;
+    bool supportsMeshShaders;
+    bool supportsVariableRateShading;
+    bool supportsAsyncCompute;
+    u32  waveSize;           // 32 (NVIDIA) or 64 (AMD)
+    u32  maxWorkgroupSize;
+    u64  dedicatedVideoMemory;
+    
+    // Vendor-specific
+    bool isNvidia() const;
+    bool isAMD() const;
+    bool isIntel() const;
+};
+
+// Runtime shader selection based on GPU capabilities
+ShaderVariant selectOptimalShader(const GPUCapabilities& caps) {
+    if (caps.supportsRayTracing) {
+        return caps.isNvidia() ? ShaderVariant::RT_NVIDIA : ShaderVariant::RT_AMD;
+    }
+    return ShaderVariant::RASTER_FALLBACK;
+}
+```
+
+### 6.3 Third-Party Libraries (Optional Integration)
 
 | Library | Purpose | License |
 |---------|---------|---------|
@@ -1125,7 +1187,7 @@ Physics LOD System (All at 60 Hz update rate, reduced fidelity):
 
 ## 7. Implementation Phases
 
-### Phase 1: Foundation (Months 1-3)
+### Phase 1: Foundation (Months 1-3) ✅ COMPLETED
 
 ```
 Week 1-4:   Project setup, build system, core types
@@ -1134,12 +1196,13 @@ Week 9-12:  Platform abstraction, window/input, logging
 ```
 
 **Deliverables:**
-- [ ] Cross-platform build system (CMake)
-- [ ] Custom allocators (linear, pool, stack)
-- [ ] Lock-free job system with work stealing
-- [ ] SIMD math library (Vec3, Vec4, Mat4, Quat)
-- [ ] Platform abstraction layer
-- [ ] Profiling infrastructure (Tracy integration)
+- [x] Cross-platform build system (CMake)
+- [x] Custom allocators (linear, pool, stack)
+- [x] Lock-free job system with work stealing
+- [x] SIMD math library (Vec3, Vec4, Mat4, Quat)
+- [x] Platform abstraction layer
+- [x] Profiling infrastructure (Tracy integration)
+- [x] Comprehensive logging system with severity levels
 
 ### Phase 2: Core Physics (Months 4-7)
 
@@ -1205,24 +1268,159 @@ Week 69-72: Spatial audio (HRTF/Ambisonics)
 - [ ] Binaural audio / Ambisonics support
 - [ ] Doppler and distance attenuation
 
-### Phase 6: Polish & Tools (Months 19-21)
+### Phase 6: Test World & Player Controller (Months 19-21)
 
 ```
-Week 73-76: Editor tools, debugging visualizations
-Week 77-80: Performance optimization, profiling
-Week 81-84: Documentation, examples, testing
+Week 73-76: Window system, input handling, basic rendering
+Week 77-80: Player controller, physics interaction, camera system
+Week 81-84: Test world with all physics types, debug visualization
 ```
 
 **Deliverables:**
-- [ ] Debug visualization for all physics systems
+- [ ] Window creation and input system (keyboard, mouse, gamepad)
+- [ ] First-person player controller with physics-based movement
+- [ ] Debug camera (fly mode, orbit mode)
+- [ ] Test world environment with zones for each physics type
+- [ ] Interactive physics spawning (spawn objects on click)
+- [ ] Real-time debug visualization (wireframes, contact points, velocities)
+- [ ] On-screen debug console with live logging
+- [ ] Performance overlay (FPS, frame time, physics stats)
+
+### Phase 7: Polish & Documentation (Months 22-24)
+
+```
+Week 85-88: Editor tools, scene serialization
+Week 89-92: Performance optimization, profiling
+Week 93-96: Documentation, examples, comprehensive testing
+```
+
+**Deliverables:**
 - [ ] Scene editor with physics preview
-- [ ] Comprehensive documentation
+- [ ] Scene save/load system
+- [ ] Comprehensive API documentation
 - [ ] Example scenes and benchmarks
-- [ ] Unit and integration tests
+- [ ] Unit and integration tests (>90% coverage)
 
 ---
 
-## 8. Directory Structure
+## 8. Test World Specification
+
+The Test World is a critical development tool that allows real-time validation of all physics systems. It should be available as soon as the rendering system is minimally functional.
+
+### 8.1 Test World Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              TEST WORLD OVERVIEW                                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                   │
+│   │  RIGID BODY    │  │  SOFT BODY     │  │    FLUIDS      │                   │
+│   │    ARENA       │  │    ARENA       │  │    ARENA       │                   │
+│   │                │  │                │  │                │                   │
+│   │ - Stacking     │  │ - Cloth flags  │  │ - Water pool   │                   │
+│   │ - Dominoes     │  │ - Bouncy balls │  │ - Oil viscous  │                   │
+│   │ - Ragdolls     │  │ - Jelly cubes  │  │ - Lava (hot)   │                   │
+│   │ - Vehicles     │  │ - Ropes/chains │  │ - Fountains    │                   │
+│   └────────────────┘  └────────────────┘  └────────────────┘                   │
+│                                                                                  │
+│   ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                   │
+│   │  DEFORMABLE    │  │  DESTRUCTION   │  │   GASEOUS      │                   │
+│   │    TERRAIN     │  │    ARENA       │  │    ARENA       │                   │
+│   │                │  │                │  │                │                   │
+│   │ - Mud pit      │  │ - Breakable    │  │ - Smoke        │                   │
+│   │ - Sand dunes   │  │   walls        │  │ - Fire         │                   │
+│   │ - Snow field   │  │ - Shattering   │  │ - Explosions   │                   │
+│   │ - Tire tracks  │  │   glass        │  │ - Wind effects │                   │
+│   └────────────────┘  └────────────────┘  └────────────────┘                   │
+│                                                                                  │
+│   ┌────────────────────────────────────────────────────────────────────┐       │
+│   │                     CENTRAL SPAWN PLATFORM                          │       │
+│   │  Player spawns here. Controls: WASD + Mouse, Space to jump         │       │
+│   │  Keys 1-9 to select physics object type, LMB to spawn             │       │
+│   │  Tab for debug menu, F1 for help overlay                           │       │
+│   └────────────────────────────────────────────────────────────────────┘       │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Player Controller
+
+```cpp
+struct PlayerController {
+    // Transform
+    Vec3 position;
+    Quat orientation;
+    
+    // Physics
+    RigidBody* physicsBody;      // Capsule collider
+    float moveSpeed = 5.0f;       // m/s
+    float sprintMultiplier = 2.0f;
+    float jumpForce = 8.0f;       // m/s impulse
+    bool isGrounded = false;
+    
+    // Camera
+    float lookSensitivity = 0.3f;
+    float pitch = 0.0f;           // Vertical look
+    float yaw = 0.0f;             // Horizontal look
+    
+    // Interaction
+    PhysicsObjectType selectedType = PhysicsObjectType::RigidBox;
+    float spawnDistance = 3.0f;
+    
+    void update(float dt) {
+        WULFNET_LOG_TRACE("Player", "Pos: ({:.2f}, {:.2f}, {:.2f}), Grounded: {}",
+            position.x(), position.y(), position.z(), isGrounded);
+        // ... movement logic
+    }
+};
+```
+
+### 8.3 Debug Overlay System
+
+```cpp
+struct DebugOverlay {
+    // Performance stats
+    bool showFPS = true;
+    bool showFrameTime = true;
+    bool showPhysicsStats = true;
+    
+    // Physics visualization
+    bool showColliders = false;
+    bool showContactPoints = false;
+    bool showVelocityVectors = false;
+    bool showBroadphaseAABBs = false;
+    bool showIslands = false;
+    
+    // Logging
+    bool showConsole = true;
+    LogLevel consoleMinLevel = LogLevel::Debug;
+    u32 maxConsoleLines = 100;
+    
+    void render() {
+        // Render ImGui-style debug UI
+        WULFNET_LOG_TRACE("DebugOverlay", "Rendering {} physics bodies, {} contacts",
+            stats.bodyCount, stats.contactCount);
+    }
+};
+```
+
+### 8.4 Logging Requirements for Test World
+
+Every system must log extensively to enable debugging:
+
+| System | Trace Level | Debug Level | Info Level |
+|--------|-------------|-------------|------------|
+| **Input** | Raw input events | Processed actions | - |
+| **Player** | Position/velocity every frame | Jump/land events | Spawn events |
+| **Physics** | Per-body updates | Collision events | Frame timing |
+| **Rendering** | Draw call counts | Shader switches | Frame complete |
+| **Memory** | Individual allocs | Pool stats | - |
+| **Jobs** | Job start/complete | Steal events | Batch stats |
+
+---
+
+## 9. Directory Structure
 
 ```
 wulfnet-engine/
@@ -1401,19 +1599,41 @@ wulfnet-engine/
 
 ---
 
-## 11. Next Steps
+## 12. Next Steps (Current State: Phase 1 Complete)
 
-1. **Initialize repository** with CMake project structure
-2. **Implement core systems** (memory, jobs, math)
-3. **Create basic rigid body** prototype to validate architecture
-4. **Set up GPU compute** pipeline (Vulkan compute or CUDA)
-5. **Iterate** based on profiling and benchmarking
+### Completed ✅
+1. **Project structure** - CMake build system, directory layout
+2. **Core types** - Types.h with platform detection, SIMD alignment
+3. **Memory allocators** - Linear, Pool, Stack allocators
+4. **Job system** - Lock-free work stealing, fiber support, thread affinity
+5. **Math library** - SIMD Vec3, Vec4, Mat4, Quat with full operations
+6. **Platform abstraction** - System info, CPU feature detection
+7. **Logging system** - Multi-level logging with colors and timestamps
+8. **Profiler integration** - Tracy profiler macros
+
+### In Progress 🚧
+1. **Phase 2: Core Physics**
+    - Collision shapes (sphere, box, capsule) ✅
+    - Spatial hash broadphase (AABB) ✅
+    - Rigid body core (integrator + world + gravity) ✅
+    - Broadphase to Narrowphase pipeline ✅
+    - Narrowphase GJK/EPA (Convex-Convex) ✅
+    - Contact Manifold Generation (Single Point) ✅
+    - Contact Manifold Persistence (Warm starting) ⬜
+    - Contact Solver (Sequential Impulse/PGS) ⬜
+    - Multi-point Manifold Generation (Clipping) ⬜
+
+### Immediate Tasks
+1. Implement Contact Solver (Sequential Impulse / PGS)
+2. Implement Manifold Persistence (Contact Caching)
+3. Implement Feature Clipping for Stable Box Stacking (Multi-point contact)
+4. Integrate Solver into RigidBodyWorld::step
 
 ---
 
 ---
 
-## 12. Appendix: Multi-Core Scaling Benchmarks
+## 13. Appendix: Multi-Core Scaling Benchmarks
 
 ### Expected Performance Scaling
 
@@ -1424,7 +1644,8 @@ wulfnet-engine/
 | 16 cores   | 18,000            | GPU-bound       | GPU-bound       | 60 FPS |
 | 32 cores   | 23,000            | GPU-bound       | GPU-bound       | 60 FPS |
 | 64 cores   | 25,000            | GPU-bound       | GPU-bound       | 60 FPS |
-| 128 threads| 25,000            | GPU-bound       | GPU-bound       | 60 FPS |
+| 128 cores  | 26,000            | GPU-bound       | GPU-bound       | 60 FPS |
+| 256 threads| 27,000            | GPU-bound       | GPU-bound       | 60 FPS |
 
 *Note: Rigid body count plateaus due to island-based parallelism limits. GPU-accelerated systems (cloth, fluid, soft body) are not CPU-bound.*
 
@@ -1464,7 +1685,7 @@ wulfnet-engine/
 
 ---
 
-*Document Version: 2.0*  
+*Document Version: 3.0*  
 *Created: February 2026*  
 *Last Updated: February 2026*  
 *WulfNet Engine Team*
