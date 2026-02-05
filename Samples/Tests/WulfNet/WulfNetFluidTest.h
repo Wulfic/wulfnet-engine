@@ -10,6 +10,8 @@
 #include <Tests/Test.h>
 #include <WulfNet/Physics/Fluids/COFLIPSystem.h>
 #include <WulfNet/Physics/Fluids/FluidSurface.h>
+#include <WulfNet/Core/System/SystemMonitor.h>
+#include <chrono>
 
 class WulfNetFluidTest : public Test
 {
@@ -24,6 +26,9 @@ public:
 
 	// Update the test
 	virtual void PrePhysicsUpdate(const PreUpdateParams &inParams) override;
+
+	// Return status string for overlay display
+	virtual String GetStatusString() const override;
 
 	// Optional: custom fluid setup (override in derived classes)
 	virtual void SetupFluid() {}
@@ -59,6 +64,14 @@ protected:
 
 	// Stats display
 	bool mShowStats = true;
+
+	// System monitoring
+	float mStatsUpdateTimer = 0.0f;
+	static constexpr float cStatsUpdateInterval = 0.5f;  // Update every 0.5 seconds
+	float mCurrentFPS = 0.0f;
+	float mFrameTimeMs = 0.0f;
+	int mFrameCount = 0;
+	std::chrono::high_resolution_clock::time_point mLastFPSTime;
 
 	// Helper methods
 	void CreateWaterBox(float minX, float minY, float minZ,

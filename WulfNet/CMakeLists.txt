@@ -17,6 +17,7 @@ set(WULFNET_SOURCES
     # Core
     Core/Logging/Logger.cpp
     Core/Profiling/Profiler.cpp
+    Core/System/SystemMonitor.cpp
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.cpp
@@ -43,6 +44,7 @@ set(WULFNET_HEADERS
     # Core
     Core/Logging/Logger.h
     Core/Profiling/Profiler.h
+    Core/System/SystemMonitor.h
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.h

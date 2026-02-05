@@ -11,6 +11,8 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Layers.h>
 #include <Renderer/DebugRendererImp.h>
+#include <sstream>
+#include <iomanip>
 
 // Register RTTI for factory
 JPH_IMPLEMENT_RTTI_VIRTUAL(WulfNetFluidTest)
@@ -70,6 +72,10 @@ WulfNetFluidTest::~WulfNetFluidTest()
 
 void WulfNetFluidTest::Initialize()
 {
+	// Initialize system monitor
+	WulfNet::SystemMonitor::Get().Initialize();
+	mLastFPSTime = std::chrono::high_resolution_clock::now();
+
 	// Create ground floor
 	CreateFloor();
 
@@ -105,6 +111,24 @@ void WulfNetFluidTest::Initialize()
 
 void WulfNetFluidTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
 {
+	// Update FPS tracking
+	mFrameCount++;
+	auto now = std::chrono::high_resolution_clock::now();
+	float elapsed = std::chrono::duration<float>(now - mLastFPSTime).count();
+	if (elapsed >= 1.0f) {
+		mCurrentFPS = static_cast<float>(mFrameCount) / elapsed;
+		mFrameTimeMs = (elapsed / mFrameCount) * 1000.0f;
+		mFrameCount = 0;
+		mLastFPSTime = now;
+	}
+
+	// Update system stats periodically
+	mStatsUpdateTimer += inParams.mDeltaTime;
+	if (mStatsUpdateTimer >= cStatsUpdateInterval) {
+		WulfNet::SystemMonitor::Get().Update();
+		mStatsUpdateTimer = 0.0f;
+	}
+
 	// Step fluid simulation
 	mFluidSystem.Step(inParams.mDeltaTime);
 
@@ -217,15 +241,61 @@ void WulfNetFluidTest::DrawSurface()
 
 void WulfNetFluidTest::DrawStats()
 {
-#ifdef JPH_DEBUG_RENDERER
+	// Stats are now displayed via GetStatusString() overlay
+}
+
+String WulfNetFluidTest::GetStatusString() const
+{
+	if (!mShowStats)
+		return String();
+
 	const WulfNet::COFLIPStats& stats = mFluidSystem.GetStats();
 	const WulfNet::FluidSurfaceStats& surfStats = mFluidSurface.GetStats();
+	const WulfNet::SystemStats& sysStats = WulfNet::SystemMonitor::Get().GetStats();
 
-	JPH_UNUSED(stats);
-	JPH_UNUSED(surfStats);
+	std::ostringstream oss;
+	oss << std::fixed;
 
-	// TODO: Add 2D text rendering when UI is available
-#endif
+	// Performance stats
+	oss << "FPS: " << std::setprecision(1) << mCurrentFPS
+	    << " (" << std::setprecision(2) << mFrameTimeMs << " ms)\n";
+
+	oss << std::setprecision(1);
+	oss << "CPU: " << sysStats.cpuUsagePercent << "%\n";
+
+	oss << "RAM: " << WulfNet::FormatBytes(sysStats.processMemoryBytes)
+	    << " / " << WulfNet::FormatBytes(sysStats.ramTotalBytes)
+	    << " (" << sysStats.ramUsagePercent << "%)\n";
+
+	if (sysStats.gpuUsageAvailable) {
+		oss << "GPU: " << sysStats.gpuUsagePercent << "%";
+		if (!sysStats.gpuName.empty()) {
+			oss << " (" << sysStats.gpuName << ")";
+		}
+		oss << "\n";
+	} else {
+		oss << "GPU: N/A\n";
+	}
+
+	if (sysStats.vramUsageAvailable) {
+		oss << "VRAM: " << WulfNet::FormatBytes(sysStats.vramUsedBytes)
+		    << " / " << WulfNet::FormatBytes(sysStats.vramTotalBytes)
+		    << " (" << sysStats.vramUsagePercent << "%)\n";
+	} else {
+		oss << "VRAM: N/A\n";
+	}
+
+	oss << "\n";  // Separator
+
+	// Fluid simulation stats
+	oss << "Particles: " << stats.activeParticles << "\n";
+	oss << "Triangles: " << surfStats.triangleCount << "\n";
+
+	oss << std::setprecision(2);
+	oss << "Sim: " << stats.totalTimeMs << " ms (P2G: " << stats.p2gTimeMs
+	    << ", Pressure: " << stats.pressureTimeMs << ", G2P: " << stats.g2pTimeMs << ")";
+
+	return String(oss.str());
 }
 
 // =============================================================================
