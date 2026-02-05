@@ -1,0 +1,67 @@
+// =============================================================================
+// WulfNet Engine - Particle Reorder Shader
+// =============================================================================
+// Reorders particles based on sorted indices for optimal cache locality
+// After this, particles in the same grid cell are contiguous in memory
+// Compile with: glslc -fshader-stage=compute coflip_reorder.comp -o coflip_reorder.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;
+    float vx;
+    float vy, vz;
+    vec3 vorticity;
+    float mass;
+    float volume;
+    uint materialId;
+    uint flags;
+    vec3 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+
+// Source particles (original order)
+layout(std430, binding = 0) readonly buffer SrcParticleBuffer {
+    Particle srcParticles[];
+};
+
+// Destination particles (sorted order)
+layout(std430, binding = 1) writeonly buffer DstParticleBuffer {
+    Particle dstParticles[];
+};
+
+// Sorted particle indices
+layout(std430, binding = 2) readonly buffer SortedIndexBuffer {
+    uint sortedIndices[];
+};
+
+// =============================================================================
+// Push constants
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+} params;
+
+// =============================================================================
+// Main kernel - simple gather operation
+// =============================================================================
+void main() {
+    uint dstIdx = gl_GlobalInvocationID.x;
+    
+    if (dstIdx >= params.particleCount) return;
+    
+    // Get source index from sorted order
+    uint srcIdx = sortedIndices[dstIdx];
+    
+    // Copy particle to new location (coalesced writes, random reads)
+    dstParticles[dstIdx] = srcParticles[srcIdx];
+}

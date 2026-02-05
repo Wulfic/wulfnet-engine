@@ -1,0 +1,131 @@
+// =============================================================================
+// WulfNet Engine - Radix Sort (Local Sort) Compute Shader  
+// =============================================================================
+// Performs local sorting of particles within workgroups using counting sort
+// This is combined with a parallel prefix sum for full radix sort
+// Compile with: glslc -fshader-stage=compute coflip_radix_sort.comp -o coflip_radix_sort.spv
+// =============================================================================
+
+#version 450
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Buffers for sorting
+// =============================================================================
+
+// Input: cell indices (keys to sort by)
+layout(std430, binding = 0) buffer CellIndexBuffer {
+    uint cellIndices[];
+};
+
+// Input/Output: particle indices (values to reorder)
+layout(std430, binding = 1) buffer ParticleIndexBuffer {
+    uint particleIndices[];
+};
+
+// Temporary buffers for ping-pong
+layout(std430, binding = 2) buffer TempCellIndexBuffer {
+    uint tempCellIndices[];
+};
+
+layout(std430, binding = 3) buffer TempParticleIndexBuffer {
+    uint tempParticleIndices[];
+};
+
+// Histogram for counting sort (one per workgroup per radix digit)
+layout(std430, binding = 4) buffer HistogramBuffer {
+    uint histogram[];
+};
+
+// =============================================================================
+// Shared memory for local sorting
+// =============================================================================
+shared uint sharedKeys[256];
+shared uint sharedVals[256];
+shared uint localHistogram[256];  // For 8-bit radix = 256 buckets
+
+// =============================================================================
+// Push constants
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint bitOffset;      // Which 8 bits to sort by (0, 8, 16, 24)
+    uint numWorkgroups;
+    uint pass;           // 0=histogram, 1=scatter
+} params;
+
+// =============================================================================
+// Extract radix digit (8 bits at specified offset)
+// =============================================================================
+uint extractDigit(uint key, uint bitOffset) {
+    return (key >> bitOffset) & 0xFFu;
+}
+
+// =============================================================================
+// Histogram pass - count occurrences of each digit in this workgroup
+// =============================================================================
+void histogramPass() {
+    uint localId = gl_LocalInvocationID.x;
+    uint globalId = gl_GlobalInvocationID.x;
+    uint workgroupId = gl_WorkGroupID.x;
+    
+    // Clear local histogram
+    localHistogram[localId] = 0;
+    barrier();
+    
+    // Count digits
+    if (globalId < params.particleCount) {
+        uint key = cellIndices[globalId];
+        uint digit = extractDigit(key, params.bitOffset);
+        atomicAdd(localHistogram[digit], 1);
+    }
+    barrier();
+    
+    // Write to global histogram
+    // Layout: histogram[digit * numWorkgroups + workgroupId]
+    uint histIdx = localId * params.numWorkgroups + workgroupId;
+    histogram[histIdx] = localHistogram[localId];
+}
+
+// =============================================================================
+// Scatter pass - reorder particles based on sorted histogram
+// =============================================================================
+void scatterPass() {
+    uint localId = gl_LocalInvocationID.x;
+    uint globalId = gl_GlobalInvocationID.x;
+    uint workgroupId = gl_WorkGroupID.x;
+    
+    // Load histogram prefix sums into shared memory
+    uint histIdx = localId * params.numWorkgroups + workgroupId;
+    localHistogram[localId] = histogram[histIdx];
+    barrier();
+    
+    // Scatter particles to new positions
+    if (globalId < params.particleCount) {
+        uint key = cellIndices[globalId];
+        uint val = particleIndices[globalId];
+        uint digit = extractDigit(key, params.bitOffset);
+        
+        // Get destination index from prefix sum
+        uint destIdx = atomicAdd(localHistogram[digit], 1);
+        
+        // Write to output
+        tempCellIndices[destIdx] = key;
+        tempParticleIndices[destIdx] = val;
+    }
+}
+
+// =============================================================================
+// Main kernel
+// =============================================================================
+void main() {
+    if (params.pass == 0) {
+        histogramPass();
+    } else {
+        scatterPass();
+    }
+}

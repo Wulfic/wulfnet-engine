@@ -1,0 +1,322 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP G2P with Shared Memory Caching
+// =============================================================================
+// Maximum performance G2P transfer using:
+// 1. Shared memory to cache grid data per workgroup
+// 2. Cooperative loading of grid neighborhood
+// 3. Assumes particles are sorted by cell for spatial coherence
+// Compile with: glslc -fshader-stage=compute coflip_g2p_shared.comp -o coflip_g2p.spv
+// =============================================================================
+
+#version 450
+
+// 8x8x4 = 256 threads, organized spatially for grid caching
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;
+    float vx;
+    float vy, vz;
+    vec3 vorticity;
+    float mass;
+    float volume;
+    uint materialId;
+    uint flags;
+    vec3 _pad;
+};
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) readonly buffer GridBuffer {
+    GridCell grid[];
+};
+
+// Previous velocities for FLIP (interleaved u,v,w per cell)
+layout(std430, binding = 2) readonly buffer PrevVelocityBuffer {
+    float prevVel[];
+};
+
+// Particle processing range for this workgroup (from spatial sorting)
+layout(std430, binding = 3) readonly buffer CellRangeBuffer {
+    uvec2 cellRanges[];  // [startIdx, count] for each cell
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+    float dt;
+    float flipRatio;
+    uint baseCellX;      // Base cell for this workgroup's region
+    uint baseCellY;
+    uint baseCellZ;
+    uint useSorting;     // Whether particles are sorted
+} params;
+
+// =============================================================================
+// Shared memory - cache a 10x10x6 grid region (accounts for 3x3x3 stencil)
+// =============================================================================
+#define CACHE_SIZE_X 10
+#define CACHE_SIZE_Y 10
+#define CACHE_SIZE_Z 6
+#define CACHE_TOTAL (CACHE_SIZE_X * CACHE_SIZE_Y * CACHE_SIZE_Z)
+
+shared vec3 sharedGridVel[CACHE_TOTAL];      // Current grid velocities
+shared vec3 sharedPrevVel[CACHE_TOTAL];      // Previous grid velocities
+
+// =============================================================================
+// Shared memory index
+// =============================================================================
+uint cacheIndex(int li, int lj, int lk) {
+    return uint(li) + uint(lj) * CACHE_SIZE_X + uint(lk) * CACHE_SIZE_X * CACHE_SIZE_Y;
+}
+
+// =============================================================================
+// Grid index helpers
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = max(0, min(i, int(params.gridSizeX) - 1));
+    j = max(0, min(j, int(params.gridSizeY) - 1));
+    k = max(0, min(k, int(params.gridSizeZ) - 1));
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Quadratic B-spline weight
+// =============================================================================
+float quadBspline(float x) {
+    float ax = abs(x);
+    if (ax < 0.5) {
+        return 0.75 - ax * ax;
+    } else if (ax < 1.5) {
+        float t = 1.5 - ax;
+        return 0.5 * t * t;
+    }
+    return 0.0;
+}
+
+// =============================================================================
+// Load grid data into shared memory cooperatively
+// =============================================================================
+void loadGridToShared(int baseI, int baseJ, int baseK) {
+    uint localIdx = gl_LocalInvocationIndex;
+    uint threadsPerWorkgroup = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
+    
+    // Each thread loads multiple cells if needed
+    for (uint c = localIdx; c < CACHE_TOTAL; c += threadsPerWorkgroup) {
+        int lk = int(c / (CACHE_SIZE_X * CACHE_SIZE_Y));
+        int lj = int((c / CACHE_SIZE_X) % CACHE_SIZE_Y);
+        int li = int(c % CACHE_SIZE_X);
+        
+        int gi = baseI + li - 1;  // -1 for stencil margin
+        int gj = baseJ + lj - 1;
+        int gk = baseK + lk - 1;
+        
+        uint gidx = gridIndex(gi, gj, gk);
+        
+        // Load current grid velocity
+        GridCell cell = grid[gidx];
+        sharedGridVel[c] = vec3(cell.u, cell.v, cell.w);
+        
+        // Load previous velocity
+        sharedPrevVel[c] = vec3(
+            prevVel[gidx * 3 + 0],
+            prevVel[gidx * 3 + 1],
+            prevVel[gidx * 3 + 2]
+        );
+    }
+    
+    barrier();
+}
+
+// =============================================================================
+// Interpolate velocity from shared memory cache
+// =============================================================================
+vec3 interpolateFromCache(vec3 localPos) {
+    int i0 = int(floor(localPos.x - 0.5));
+    int j0 = int(floor(localPos.y - 0.5));
+    int k0 = int(floor(localPos.z - 0.5));
+    
+    float fx = localPos.x - (float(i0) + 0.5);
+    float fy = localPos.y - (float(j0) + 0.5);
+    float fz = localPos.z - (float(k0) + 0.5);
+    
+    // Precompute 1D weights
+    float wx[3], wy[3], wz[3];
+    wx[0] = quadBspline(fx + 1.0);
+    wx[1] = quadBspline(fx);
+    wx[2] = quadBspline(fx - 1.0);
+    wy[0] = quadBspline(fy + 1.0);
+    wy[1] = quadBspline(fy);
+    wy[2] = quadBspline(fy - 1.0);
+    wz[0] = quadBspline(fz + 1.0);
+    wz[1] = quadBspline(fz);
+    wz[2] = quadBspline(fz - 1.0);
+    
+    vec3 vel = vec3(0.0);
+    
+    for (int dk = 0; dk < 3; ++dk) {
+        int lk = k0 + dk + 1;  // +1 for margin
+        if (lk < 0 || lk >= CACHE_SIZE_Z) continue;
+        
+        for (int dj = 0; dj < 3; ++dj) {
+            int lj = j0 + dj + 1;
+            if (lj < 0 || lj >= CACHE_SIZE_Y) continue;
+            
+            for (int di = 0; di < 3; ++di) {
+                int li = i0 + di + 1;
+                if (li < 0 || li >= CACHE_SIZE_X) continue;
+                
+                float w = wx[di] * wy[dj] * wz[dk];
+                if (w > 1e-6) {
+                    uint cidx = cacheIndex(li, lj, lk);
+                    vel += w * sharedGridVel[cidx];
+                }
+            }
+        }
+    }
+    
+    return vel;
+}
+
+// Similar for previous velocity
+vec3 interpolatePrevFromCache(vec3 localPos) {
+    int i0 = int(floor(localPos.x - 0.5));
+    int j0 = int(floor(localPos.y - 0.5));
+    int k0 = int(floor(localPos.z - 0.5));
+    
+    float fx = localPos.x - (float(i0) + 0.5);
+    float fy = localPos.y - (float(j0) + 0.5);
+    float fz = localPos.z - (float(k0) + 0.5);
+    
+    float wx[3], wy[3], wz[3];
+    wx[0] = quadBspline(fx + 1.0);
+    wx[1] = quadBspline(fx);
+    wx[2] = quadBspline(fx - 1.0);
+    wy[0] = quadBspline(fy + 1.0);
+    wy[1] = quadBspline(fy);
+    wy[2] = quadBspline(fy - 1.0);
+    wz[0] = quadBspline(fz + 1.0);
+    wz[1] = quadBspline(fz);
+    wz[2] = quadBspline(fz - 1.0);
+    
+    vec3 vel = vec3(0.0);
+    
+    for (int dk = 0; dk < 3; ++dk) {
+        int lk = k0 + dk + 1;
+        if (lk < 0 || lk >= CACHE_SIZE_Z) continue;
+        
+        for (int dj = 0; dj < 3; ++dj) {
+            int lj = j0 + dj + 1;
+            if (lj < 0 || lj >= CACHE_SIZE_Y) continue;
+            
+            for (int di = 0; di < 3; ++di) {
+                int li = i0 + di + 1;
+                if (li < 0 || li >= CACHE_SIZE_X) continue;
+                
+                float w = wx[di] * wy[dj] * wz[dk];
+                if (w > 1e-6) {
+                    uint cidx = cacheIndex(li, lj, lk);
+                    vel += w * sharedPrevVel[cidx];
+                }
+            }
+        }
+    }
+    
+    return vel;
+}
+
+// =============================================================================
+// Main G2P kernel with shared memory
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x + 
+                       gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x +
+                       gl_GlobalInvocationID.z * gl_NumWorkGroups.x * gl_WorkGroupSize.x * 
+                                                 gl_NumWorkGroups.y * gl_WorkGroupSize.y;
+    
+    // For non-sorted mode, use linear indexing
+    if (params.useSorting == 0) {
+        particleIdx = gl_GlobalInvocationID.x;
+    }
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    // Load particle
+    Particle p = particles[particleIdx];
+    
+    if ((p.flags & 1u) == 0u) return;
+    
+    // Compute grid position
+    vec3 gpos = p.position * params.invCellSize;
+    
+    // Compute base cell for shared memory region
+    int baseI = int(floor(gpos.x)) - 4;  // Center the 8-cell workgroup region
+    int baseJ = int(floor(gpos.y)) - 4;
+    int baseK = int(floor(gpos.z)) - 2;
+    
+    // Load grid data into shared memory
+    loadGridToShared(baseI, baseJ, baseK);
+    
+    // Convert to local coordinates within cached region
+    vec3 localPos = gpos - vec3(float(baseI), float(baseJ), float(baseK));
+    
+    // Interpolate velocities from shared memory cache
+    vec3 velGrid = interpolateFromCache(localPos);
+    vec3 velGridPrev = interpolatePrevFromCache(localPos);
+    
+    // Current particle velocity
+    vec3 velParticle = vec3(p.vx, p.vy, p.vz);
+    
+    // FLIP/PIC blend
+    vec3 velFLIP = velParticle + (velGrid - velGridPrev);
+    vec3 velNew = mix(velGrid, velFLIP, params.flipRatio);
+    
+    // Advect particle
+    vec3 newPos = p.position + velNew * params.dt;
+    
+    // Clamp to domain
+    float margin = params.cellSize * 0.5;
+    float maxX = float(params.gridSizeX) * params.cellSize - margin;
+    float maxY = float(params.gridSizeY) * params.cellSize - margin;
+    float maxZ = float(params.gridSizeZ) * params.cellSize - margin;
+    
+    if (newPos.x < margin) { newPos.x = margin; velNew.x = max(0.0, velNew.x); }
+    if (newPos.x > maxX)   { newPos.x = maxX;   velNew.x = min(0.0, velNew.x); }
+    if (newPos.y < margin) { newPos.y = margin; velNew.y = max(0.0, velNew.y); }
+    if (newPos.y > maxY)   { newPos.y = maxY;   velNew.y = min(0.0, velNew.y); }
+    if (newPos.z < margin) { newPos.z = margin; velNew.z = max(0.0, velNew.z); }
+    if (newPos.z > maxZ)   { newPos.z = maxZ;   velNew.z = min(0.0, velNew.z); }
+    
+    // Write back
+    particles[particleIdx].position = newPos;
+    particles[particleIdx].vx = velNew.x;
+    particles[particleIdx].vy = velNew.y;
+    particles[particleIdx].vz = velNew.z;
+}

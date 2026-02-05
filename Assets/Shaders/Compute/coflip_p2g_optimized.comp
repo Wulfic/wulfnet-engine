@@ -1,0 +1,201 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Particle to Grid (P2G) Compute Shader - OPTIMIZED
+// =============================================================================
+// High-performance P2G transfer with:
+// 1. Quadratic B-spline (3x3x3 = 27 cells vs 4x4x4 = 64 cells)
+// 2. Optimized atomic operations
+// 3. Reduced register pressure
+// Compile with: glslc -fshader-stage=compute coflip_p2g_optimized.comp -o coflip_p2g.spv
+// =============================================================================
+
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+// Optimized workgroup size for better SM occupancy
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;      // 12 bytes
+    float vx;           // 4 bytes
+    float vy, vz;       // 8 bytes
+    vec3 vorticity;     // 12 bytes
+    float mass;         // 4 bytes
+    float volume;       // 4 bytes
+    uint materialId;    // 4 bytes
+    uint flags;         // 4 bytes
+    vec3 _pad;          // 12 bytes
+};
+
+// =============================================================================
+// Grid cell structure (48 bytes, matches CPU)
+// =============================================================================
+struct GridCell {
+    float u, v, w;      // Face velocities
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;      // 0=air, 1=fluid, 2=solid
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) buffer GridBuffer {
+    GridCell grid[];
+};
+
+// Separate buffers for atomic accumulation (avoids read-modify-write hazards)
+layout(std430, binding = 2) buffer AccumU {
+    float accumU[];
+};
+
+layout(std430, binding = 3) buffer AccumV {
+    float accumV[];
+};
+
+layout(std430, binding = 4) buffer AccumW {
+    float accumW[];
+};
+
+layout(std430, binding = 5) buffer AccumWeightU {
+    float accumWeightU[];
+};
+
+layout(std430, binding = 6) buffer AccumWeightV {
+    float accumWeightV[];
+};
+
+layout(std430, binding = 7) buffer AccumWeightW {
+    float accumWeightW[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+} params;
+
+// =============================================================================
+// Quadratic B-spline (3x3 support, more efficient than cubic)
+// =============================================================================
+float quadBspline(float x) {
+    float ax = abs(x);
+    if (ax < 0.5) {
+        return 0.75 - ax * ax;
+    } else if (ax < 1.5) {
+        float t = 1.5 - ax;
+        return 0.5 * t * t;
+    }
+    return 0.0;
+}
+
+// =============================================================================
+// Grid index calculation with bounds clamping
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = max(0, min(i, int(params.gridSizeX) - 1));
+    j = max(0, min(j, int(params.gridSizeY) - 1));
+    k = max(0, min(k, int(params.gridSizeZ) - 1));
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Main P2G kernel - Optimized
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x;
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    Particle p = particles[particleIdx];
+    
+    // Check if particle is active
+    if ((p.flags & 1u) == 0u) return;
+    
+    // Convert to grid coordinates
+    vec3 gpos = p.position * params.invCellSize;
+    
+    // Particle velocity
+    vec3 vel = vec3(p.vx, p.vy, p.vz);
+    
+    // Base cell for 3x3x3 stencil
+    int i0 = int(floor(gpos.x - 0.5));
+    int j0 = int(floor(gpos.y - 0.5));
+    int k0 = int(floor(gpos.z - 0.5));
+    
+    // Fractional position relative to base cell center
+    float fx = gpos.x - (float(i0) + 0.5);
+    float fy = gpos.y - (float(j0) + 0.5);
+    float fz = gpos.z - (float(k0) + 0.5);
+    
+    // Precompute 1D weights
+    float wx[3], wy[3], wz[3];
+    wx[0] = quadBspline(fx + 1.0);
+    wx[1] = quadBspline(fx);
+    wx[2] = quadBspline(fx - 1.0);
+    wy[0] = quadBspline(fy + 1.0);
+    wy[1] = quadBspline(fy);
+    wy[2] = quadBspline(fy - 1.0);
+    wz[0] = quadBspline(fz + 1.0);
+    wz[1] = quadBspline(fz);
+    wz[2] = quadBspline(fz - 1.0);
+    
+    float mass = p.mass;
+    
+    // 3x3x3 stencil splat
+    for (int dk = 0; dk < 3; ++dk) {
+        int k = k0 + dk;
+        if (k < 0 || k >= int(params.gridSizeZ)) continue;
+        
+        float wk = wz[dk];
+        
+        for (int dj = 0; dj < 3; ++dj) {
+            int j = j0 + dj;
+            if (j < 0 || j >= int(params.gridSizeY)) continue;
+            
+            float wjk = wy[dj] * wk;
+            
+            for (int di = 0; di < 3; ++di) {
+                int i = i0 + di;
+                if (i < 0 || i >= int(params.gridSizeX)) continue;
+                
+                float w = wx[di] * wjk;
+                
+                if (w > 1e-8) {
+                    float massWeight = mass * w;
+                    uint idx = gridIndex(i, j, k);
+                    
+                    // Atomic accumulation to grid
+                    // U-velocity contribution
+                    atomicAdd(accumU[idx], vel.x * massWeight);
+                    atomicAdd(accumWeightU[idx], massWeight);
+                    
+                    // V-velocity contribution
+                    atomicAdd(accumV[idx], vel.y * massWeight);
+                    atomicAdd(accumWeightV[idx], massWeight);
+                    
+                    // W-velocity contribution
+                    atomicAdd(accumW[idx], vel.z * massWeight);
+                    atomicAdd(accumWeightW[idx], massWeight);
+                    
+                    // Mark as fluid cell (non-atomic, but that's okay - just needs to be set)
+                    grid[idx].cellType = 1u;
+                }
+            }
+        }
+    }
+}

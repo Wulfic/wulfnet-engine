@@ -17,6 +17,9 @@
 
 namespace WulfNet {
 
+// Forward declaration
+FluidSimParams COFLIPSystem_BuildParams(const COFLIPConfig& config, uint32_t particleCount);
+
 // =============================================================================
 // Constructor / Destructor
 // =============================================================================
@@ -151,11 +154,32 @@ void COFLIPSystem::Step(float dt) {
     }
 
     if (m_gpuEnabled) {
-        // GPU path
-        ParticleToGrid_GPU();
-        ApplyExternalForces_GPU(dt);
-        PressureSolve_GPU();
-        GridToParticle_GPU();
+        // GPU path - Use batched dispatch for maximum performance
+        // This records all simulation stages into a single command buffer
+        // and only waits once at the end, eliminating per-dispatch sync overhead
+        auto gpuStart = std::chrono::high_resolution_clock::now();
+
+        if (m_gpuCompute && m_gpuCompute->IsInitialized()) {
+            FluidSimParams params = COFLIPSystem_BuildParams(m_config, m_activeParticles);
+            params.dt = dt;
+            m_gpuCompute->DispatchFullStepBatched(params);
+        } else {
+            // Fallback to CPU if GPU not available
+            ParticleToGrid_CPU();
+            for (uint32_t idx = 0; idx < m_gridTotalCells; ++idx) {
+                m_prevU[idx] = m_grid[idx].u;
+                m_prevV[idx] = m_grid[idx].v;
+                m_prevW[idx] = m_grid[idx].w;
+            }
+            ApplyExternalForces_CPU(dt);
+            ComputeDivergence_CPU();
+            PressureSolve_CPU();
+            ApplyPressureGradient_CPU();
+            GridToParticle_CPU();
+        }
+
+        auto gpuEnd = std::chrono::high_resolution_clock::now();
+        m_stats.totalTimeMs = std::chrono::duration<float, std::milli>(gpuEnd - gpuStart).count();
     } else {
         // CPU path
         auto p2gStart = std::chrono::high_resolution_clock::now();

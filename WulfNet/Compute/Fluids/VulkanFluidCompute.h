@@ -117,8 +117,28 @@ public:
     /// Grid-to-Particle transfer with FLIP/PIC blend
     void DispatchG2P(const FluidSimParams& params);
 
-    /// Full simulation step (all stages)
+    /// Full simulation step (all stages) - BATCHED for performance
     void DispatchFullStep(const FluidSimParams& params);
+
+    /// Full simulation step using single command buffer (maximum performance)
+    /// This eliminates per-dispatch synchronization overhead
+    void DispatchFullStepBatched(const FluidSimParams& params);
+
+    /// Full simulation step with particle sorting for optimal cache performance
+    void DispatchFullStepSorted(const FluidSimParams& params);
+
+    /// Async compute - begin simulation step (returns immediately)
+    /// Call WaitForSimulation() before accessing results
+    void BeginAsyncSimulation(const FluidSimParams& params);
+
+    /// Wait for async simulation to complete
+    void WaitForSimulation();
+
+    /// Check if async simulation is in progress
+    bool IsSimulationInProgress() const { return m_asyncInProgress; }
+
+    /// Sort particles by cell for improved cache coherence
+    void SortParticlesByCell(const FluidSimParams& params);
 
     // ==========================================================================
     // GPU Buffer Handles (for external rendering)
@@ -136,8 +156,28 @@ private:
     bool CreateBuffers(const COFLIPConfig& config);
     void InsertMemoryBarrier();
 
+    // Batched dispatch helpers
+    void RecordP2G(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordNormalize(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordForces(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordDivergence(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordPressure(VkCommandBuffer cmd, const FluidSimParams& params, uint32_t iterations);
+    void RecordGradient(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordG2P(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordMemoryBarrier(VkCommandBuffer cmd);
+
+    // Particle sorting helpers
+    void RecordCellIndexCompute(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordRadixSort(VkCommandBuffer cmd, const FluidSimParams& params);
+    void RecordParticleReorder(VkCommandBuffer cmd, const FluidSimParams& params);
+
     bool m_initialized = false;
     VulkanContext* m_vulkan = nullptr;
+
+    // Async compute state
+    bool m_asyncInProgress = false;
+    VkFence m_asyncFence = VK_NULL_HANDLE;
+    VkCommandBuffer m_asyncCmdBuffer = VK_NULL_HANDLE;
 
     // Compute pipelines
     std::unique_ptr<ComputePipeline> m_p2gPipeline;
@@ -148,10 +188,23 @@ private:
     std::unique_ptr<ComputePipeline> m_gradientPipeline;
     std::unique_ptr<ComputePipeline> m_g2pPipeline;
 
+    // Particle sorting pipelines
+    std::unique_ptr<ComputePipeline> m_cellIndexPipeline;
+    std::unique_ptr<ComputePipeline> m_radixSortPipeline;
+    std::unique_ptr<ComputePipeline> m_reorderPipeline;
+
     // GPU buffers
     std::unique_ptr<ComputeBuffer<COFLIPParticle>> m_particleBuffer;
     std::unique_ptr<ComputeBuffer<COFLIPCell>> m_gridBuffer;
     std::unique_ptr<ComputeBuffer<float>> m_prevVelocityBuffer;  // Previous velocities for FLIP
+
+    // Sorting buffers
+    std::unique_ptr<ComputeBuffer<uint32_t>> m_cellIndexBuffer;
+    std::unique_ptr<ComputeBuffer<uint32_t>> m_particleIndexBuffer;
+    std::unique_ptr<ComputeBuffer<uint32_t>> m_tempCellIndexBuffer;
+    std::unique_ptr<ComputeBuffer<uint32_t>> m_tempParticleIndexBuffer;
+    std::unique_ptr<ComputeBuffer<uint32_t>> m_histogramBuffer;
+    std::unique_ptr<ComputeBuffer<COFLIPParticle>> m_sortedParticleBuffer;
 
     // Buffer sizes
     uint32_t m_maxParticles = 0;

@@ -1,0 +1,117 @@
+// =============================================================================
+// WulfNet Engine - Particle Cell Index Computation Shader
+// =============================================================================
+// Computes the cell index (spatial hash) for each particle
+// This is the first step in sorting particles by spatial locality
+// Compile with: glslc -fshader-stage=compute coflip_cell_index.comp -o coflip_cell_index.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;
+    float vx;
+    float vy, vz;
+    vec3 vorticity;
+    float mass;
+    float volume;
+    uint materialId;
+    uint flags;
+    vec3 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// Cell indices for each particle (for sorting)
+layout(std430, binding = 1) writeonly buffer CellIndexBuffer {
+    uint cellIndices[];  // Cell index for each particle
+};
+
+// Particle indices (will be sorted by cell index)
+layout(std430, binding = 2) writeonly buffer ParticleIndexBuffer {
+    uint particleIndices[];  // Initially 0,1,2,3,...,N-1
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+} params;
+
+// =============================================================================
+// Compute cell index from position using Z-order curve (Morton code)
+// This provides better spatial locality than linear indexing
+// =============================================================================
+uint expandBits(uint v) {
+    v = (v | (v << 16)) & 0x030000FF;
+    v = (v | (v <<  8)) & 0x0300F00F;
+    v = (v | (v <<  4)) & 0x030C30C3;
+    v = (v | (v <<  2)) & 0x09249249;
+    return v;
+}
+
+uint mortonCode(uvec3 idx) {
+    // Clamp to valid range
+    idx = min(idx, uvec3(1023));
+    return expandBits(idx.x) | (expandBits(idx.y) << 1) | (expandBits(idx.z) << 2);
+}
+
+// Simple linear cell index (fallback, still provides good locality)
+uint linearCellIndex(int i, int j, int k) {
+    i = max(0, min(i, int(params.gridSizeX) - 1));
+    j = max(0, min(j, int(params.gridSizeY) - 1));
+    k = max(0, min(k, int(params.gridSizeZ) - 1));
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Main kernel
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x;
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    Particle p = particles[particleIdx];
+    
+    // Compute grid cell coordinates
+    vec3 gpos = p.position * params.invCellSize;
+    int i = int(floor(gpos.x));
+    int j = int(floor(gpos.y));
+    int k = int(floor(gpos.z));
+    
+    // Compute cell index
+    uint cellIdx;
+    
+    // Use Morton code for better cache locality if grid is small enough
+    if (params.gridSizeX <= 1024 && params.gridSizeY <= 1024 && params.gridSizeZ <= 1024) {
+        uvec3 clampedIdx = uvec3(
+            max(0, min(i, int(params.gridSizeX) - 1)),
+            max(0, min(j, int(params.gridSizeY) - 1)),
+            max(0, min(k, int(params.gridSizeZ) - 1))
+        );
+        cellIdx = mortonCode(clampedIdx);
+    } else {
+        cellIdx = linearCellIndex(i, j, k);
+    }
+    
+    // Store cell index and particle index
+    cellIndices[particleIdx] = cellIdx;
+    particleIndices[particleIdx] = particleIdx;
+}
