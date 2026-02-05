@@ -476,4 +476,33 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 			endif()
 		endif()
 	endif()
+
+	# =============================================================================
+	# WulfNet Engine Extensions
+	# =============================================================================
+	option(TARGET_WULFNET "Build WulfNet Engine extensions" ON)
+	option(TARGET_WULFNET_TESTS "Build WulfNet Tests" ON)
+	option(TARGET_WULFNET_EXAMPLES "Build WulfNet Examples" ON)
+	option(WULFNET_ENABLE_TRACY "Enable Tracy profiler for WulfNet" OFF)
+
+	if (TARGET_WULFNET)
+		message(STATUS "")
+		message(STATUS "=== WulfNet Engine ===")
+
+		# Include WulfNet library
+		add_subdirectory(${PHYSICS_REPO_ROOT}/WulfNet ${CMAKE_CURRENT_BINARY_DIR}/WulfNet)
+
+		# Include WulfNet tests
+		if (TARGET_WULFNET_TESTS)
+			add_subdirectory(${PHYSICS_REPO_ROOT}/WulfNetTests ${CMAKE_CURRENT_BINARY_DIR}/WulfNetTests)
+		endif()
+
+		# Include WulfNet examples
+		if (TARGET_WULFNET_EXAMPLES)
+			add_subdirectory(${PHYSICS_REPO_ROOT}/WulfNetExamples ${CMAKE_CURRENT_BINARY_DIR}/WulfNetExamples)
+		endif()
+
+		message(STATUS "=== WulfNet Engine configured ===")
+		message(STATUS "")
+	endif()
 endif()
