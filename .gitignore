@@ -1,62 +1,167 @@
-# Prerequisites
-*.d
-*.obj
-*.o
-*.inc
+# =============================================================================
+# WulfNet Engine - Git Ignore Configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# IDE & Editor
+# -----------------------------------------------------------------------------
+.cache/
+.clangd/
+.fleet/
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
 *.swp
-*.swo
+*~
 
-# Compiled Object files
-*.slo
-*.lo
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# Build Outputs
+# -----------------------------------------------------------------------------
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+CMakeSettings.json
+
+# Build directories (covered by Build/.gitignore too)
+build/
+out/
+bin/
+lib/
+
+# Object files
 *.o
 *.obj
+*.lo
+*.slo
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
+# Libraries
 *.lib
+*.a
+*.la
+*.lo
+*.dll
+*.so
+*.so.*
+*.dylib
 
 # Executables
 *.exe
 *.out
 *.app
+*.x86_64
+*.hex
 
-# CMake artifacts
-build/
-out/
-bin/
-cmake-build-*/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-*.cmake
-!CMakeLists.txt
-!*/CMakeLists.txt
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
 
-# VS Code
-.vscode/
-*.code-workspace
+# -----------------------------------------------------------------------------
+# Compiled Shaders
+# -----------------------------------------------------------------------------
+*.spv
+*.metallib
+*.cso
+*.dxil
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# -----------------------------------------------------------------------------
+# Jolt Physics Specific
+# -----------------------------------------------------------------------------
+/profile_chart_*.html
+/stats*.html
+/snapshot.bin
+/*.jor
+/detlog.txt
+/Assets/*.hair
 
-# Documentation
-doxygen/
-docs/html/
-docs/latex/
+# -----------------------------------------------------------------------------
+# WulfNet Engine Specific
+# -----------------------------------------------------------------------------
+# Tracy profiler captures
+*.tracy
+
+# Generated assets
+*.generated.*
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage & Analysis
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Profiling
+*.prof
+*.profdata
+gmon.out
+
+# -----------------------------------------------------------------------------
+# Package Managers
+# -----------------------------------------------------------------------------
+# vcpkg
+vcpkg_installed/
+
+# Conan
+conan/
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
+
+# -----------------------------------------------------------------------------
+# Documentation (Generated)
+# -----------------------------------------------------------------------------
+# Doxygen output (kept in Build/.gitignore)
+/Doxygen/
+
+# -----------------------------------------------------------------------------
+# Archives & Packages
+# -----------------------------------------------------------------------------
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# -----------------------------------------------------------------------------
+# Secrets & Local Config
+# -----------------------------------------------------------------------------
+*.env
+*.env.local
+.env.*.local
+secrets.json
+local.properties

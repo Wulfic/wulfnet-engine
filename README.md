@@ -1,267 +1,158 @@
 # WulfNet Engine
 
-<p align="center">
-  <strong>A High-Performance, AAA-Grade Game Engine</strong><br>
-  Built for massive parallelization and modern hardware
-</p>
+A **fully-featured, AAA-grade physics and game engine** built on top of [Jolt Physics](https://github.com/jrouwe/JoltPhysics). WulfNet extends Jolt's battle-tested rigid body physics with advanced simulations including fluids, deformables, destruction, and a complete rendering/audio pipeline.
 
----
+## 🎯 Project Vision
 
-## Overview
+WulfNet Engine leverages Jolt Physics (used in Horizon Forbidden West and Death Stranding 2) as its foundation, focusing development on **extending capabilities** rather than reinventing solved problems.
 
-WulfNet Engine is a fully-featured, high-performance game engine designed for modern AAA game development. Built from the ground up with **C++20**, it leverages cutting-edge techniques including:
+| Jolt Physics Provides | WulfNet Engine Adds |
+|-----------------------|---------------------|
+| Rigid body dynamics | GPU-accelerated physics |
+| Soft bodies (cloth, volumetric) | Fluid dynamics (SPH, FLIP, APIC) |
+| Vehicles (wheeled, tracked) | Gaseous simulation (smoke, fire) |
+| Ragdolls & characters | MPM deformables (mud, sand, snow) |
+| Constraints & joints | Destruction physics |
+| Hair simulation (GPU) | PBR rendering pipeline |
+| Buoyancy | Acoustic simulation |
 
-- **Massive Parallelization**: Scales to 64+ cores and 128+ threads
-- **SIMD Optimization**: SSE4.2, AVX2, and AVX512 support
-- **Lock-Free Job System**: Work-stealing scheduler with fiber-based coroutines
-- **Custom Memory Allocators**: Linear, pool, and stack allocators with cache-line alignment
-- **Cross-Platform**: Windows and Linux support
+## ✨ Features
 
-## Requirements
+### From Jolt Physics (Included)
+- **Rigid Body Simulation** - High-performance multi-threaded solver
+- **Collision Detection** - Sphere, Box, Capsule, Convex Hull, Mesh, HeightField
+- **Constraints** - Fixed, Hinge, Slider, Cone, Distance, 6-DOF, and more
+- **Soft Bodies** - XPBD-based cloth, volumetric deformables
+- **Vehicles** - Wheeled, tracked, motorcycles
+- **Characters** - Rigid body and virtual character controllers
+- **Hair Simulation** - GPU-accelerated strand simulation
 
-### Build Requirements
+### WulfNet Extensions (In Development)
+- **Fluid Dynamics** - SPH/FLIP/APIC solvers (GPU)
+- **Material Point Method** - Mud, sand, snow simulation (GPU)
+- **Gaseous Physics** - Smoke, fire, explosions
+- **Destruction** - Voronoi fracture with Jolt integration
+- **Terrain Deformation** - Real-time heightfield modification
+- **Vulkan Renderer** - PBR materials, GI, volumetrics
+- **Acoustic Simulation** - Ray-traced reverb, HRTF spatial audio
 
-| Requirement | Version |
-|-------------|---------|
-| CMake | 3.25+ |
-| C++ Compiler | C++20 support (MSVC 2022+, GCC 12+, Clang 15+) |
-| Vulkan SDK | 1.3+ (optional, for rendering) |
+## 🏗️ Architecture
 
-### Supported Platforms
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     WULFNET ENGINE LAYER                         │
+├──────────────┬──────────────┬──────────────┬───────────────────┤
+│   Extended   │   Renderer   │    Audio     │    Scene Graph    │
+│   Physics    │   (Vulkan)   │   System     │                   │
+├──────────────┴──────────────┴──────────────┴───────────────────┤
+│                    JOLT PHYSICS FOUNDATION                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Rigid Bodies  │  Soft Bodies  │  Vehicles  │  Constraints      │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-| Platform | Architecture | Status |
-|----------|--------------|--------|
-| Windows 10/11 | x64 | ✅ Primary |
-| Linux | x64 | ✅ Supported |
+## 🚀 Getting Started
 
-## Quick Start
+### Prerequisites
+- **CMake** 3.25 or higher
+- **C++20** compatible compiler
+  - Visual Studio 2022 (Windows)
+  - GCC 11+ / Clang 14+ (Linux)
+  - Xcode 14+ (macOS)
+- **Vulkan SDK** (optional, for rendering/GPU compute)
 
-### Clone the Repository
+### Building
+
+#### Windows (Visual Studio 2022)
+```bash
+cd Build
+cmake_vs2022_cl.bat
+# Open Build/VS2022_CL/WulfNetEngine.sln
+```
+
+#### Linux
+```bash
+cd Build
+./cmake_linux_clang_gcc.sh Release clang++
+cd Linux_Release
+make -j$(nproc)
+```
+
+#### macOS
+```bash
+cd Build
+./cmake_xcode_macos.sh
+# Open Build/XCode_macOS/WulfNetEngine.xcodeproj
+```
+
+### Running Samples
 
 ```bash
-git clone https://github.com/your-org/wulfnet-engine.git
-cd wulfnet-engine
+# Run Jolt's sample viewer (physics demos)
+./bin/JoltViewer
+
+# Run performance benchmarks
+./bin/PerformanceTest
 ```
 
-### Configure and Build (Windows)
-
-```powershell
-# Configure with CMake
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build build --config Release
-```
-
-### Configure and Build (Linux)
-
-```bash
-# Configure with CMake
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build build --config Release
-```
-
-### Build Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `WULFNET_BUILD_TESTS` | ON | Build unit tests |
-| `WULFNET_BUILD_EXAMPLES` | ON | Build example applications |
-| `WULFNET_BUILD_DOCS` | OFF | Build documentation |
-| `WULFNET_ENABLE_PROFILING` | OFF | Enable Tracy profiler integration |
-| `WULFNET_SIMD_LEVEL` | AUTO | SIMD level: AUTO, SSE42, AVX2, AVX512 |
-
-## Architecture
+## 📁 Project Structure
 
 ```
 wulfnet-engine/
-├── src/
-│   ├── core/           # Core utilities, types, memory, jobs
-│   │   ├── memory/     # Custom allocators
-│   │   ├── math/       # SIMD math library
-│   │   ├── jobs/       # Job system and fibers
-│   │   └── platform/   # Platform abstraction
-│   ├── physics/        # Physics engine (coming soon)
-│   ├── rendering/      # Vulkan/DX12 renderer (coming soon)
-│   └── audio/          # Audio system (coming soon)
-├── examples/           # Example applications
-├── tests/              # Unit tests
-└── docs/               # Documentation
+├── Jolt/                 # Jolt Physics core (upstream)
+├── JoltViewer/           # Interactive physics demos
+├── Samples/              # Physics test scenes
+├── TestFramework/        # Test utilities & debug renderer
+├── UnitTests/            # Jolt unit tests
+├── PerformanceTest/      # Benchmarks
+│
+├── WulfNet/              # WulfNet extensions (coming soon)
+│   ├── Physics/          # Fluids, MPM, destruction
+│   ├── Compute/          # GPU compute layer
+│   ├── Rendering/        # Vulkan renderer
+│   └── Audio/            # Acoustic simulation
+│
+├── Build/                # Platform-specific build scripts
+├── Assets/               # Shared assets
+└── docs/                 # Documentation
 ```
 
-## Core Systems
+## 📊 Performance Targets
 
-### Memory System
+| System | Target | Source |
+|--------|--------|--------|
+| Rigid Bodies | 25,000 active @ 60 FPS | Jolt |
+| Soft Body Particles | 100,000 @ 60 FPS | Jolt |
+| Hair Strands | 100,000 @ 60 FPS | Jolt (GPU) |
+| Fluid Particles | 1,000,000 @ 60 FPS | WulfNet (GPU) |
+| MPM Particles | 500,000 @ 60 FPS | WulfNet (GPU) |
 
-WulfNet uses custom allocators for deterministic performance:
+## 📖 Documentation
 
-```cpp
-#include "core/memory/Memory.h"
+- [**ENGINE_PLAN.md**](ENGINE_PLAN.md) - Full technical architecture and roadmap
+- [**docs/Architecture.md**](docs/Architecture.md) - Jolt Physics architecture
+- [**docs/Samples.md**](docs/Samples.md) - Sample documentation
 
-using namespace WulfNet;
+## 🤝 Contributing
 
-// Linear allocator for frame-temporary data
-LinearAllocator frameAlloc(1024 * 1024);  // 1MB
-auto* temp = frameAlloc.alloc<MyStruct>(16);
+Contributions welcome! Please follow these principles:
 
-// Pool allocator for fixed-size objects
-PoolAllocator<Entity> entityPool(1024);
-Entity* entity = entityPool.alloc();
+1. **Don't modify Jolt/** - Keep upstream changes minimal for easy updates
+2. **GPU-first for new physics** - Use compute shaders for heavy workloads
+3. **Comprehensive testing** - Unit tests for all new systems
+4. **Document as you go** - Update docs with each feature
 
-// Stack allocator for LIFO allocations
-StackAllocator stackAlloc(64 * 1024);
-auto marker = stackAlloc.getMarker();
-// ... allocations ...
-stackAlloc.freeToMarker(marker);
-```
+## 📜 License
 
-### Math Library (SIMD)
+WulfNet Engine extensions are licensed under [MIT License](LICENSE).
 
-Hardware-accelerated math with automatic SIMD dispatch:
+Jolt Physics is licensed under the [MIT License](https://github.com/jrouwe/JoltPhysics/blob/master/LICENSE).
 
-```cpp
-#include "core/math/Math.h"
+## 🙏 Acknowledgments
 
-using namespace WulfNet;
-
-Vec3 position(1.0f, 2.0f, 3.0f);
-Vec3 velocity(0.1f, 0.0f, 0.0f);
-position += velocity * deltaTime;
-
-Quat rotation = Quat::fromAxisAngle(Vec3::up(), radians(45.0f));
-Vec3 forward = rotation.rotate(Vec3::forward());
-
-Mat4 transform = Mat4::translation(position) * Mat4::fromQuat(rotation);
-```
-
-### Job System
-
-Lock-free, work-stealing job scheduler:
-
-```cpp
-#include "core/jobs/JobSystem.h"
-
-using namespace WulfNet;
-
-JobSystem& jobs = JobSystem::get();
-
-// Simple parallel for
-std::vector<Entity> entities(10000);
-jobs.parallelFor(0, entities.size(), [&](u32 start, u32 end) {
-    for (u32 i = start; i < end; i++) {
-        updateEntity(entities[i]);
-    }
-}, 256);  // Batch size
-
-// Job with dependencies
-Job physicsJob = jobs.createJob([](void*) {
-    simulatePhysics();
-});
-
-Job renderJob = jobs.createJob([](void*) {
-    renderScene();
-}, &physicsJob);  // Depends on physics
-
-jobs.submit(physicsJob);
-jobs.submit(renderJob);
-jobs.wait(renderJob);
-```
-
-### Logging
-
-Thread-safe logging with multiple severity levels:
-
-```cpp
-#include "core/Log.h"
-
-using namespace WulfNet;
-
-WULFNET_LOG_INFO("Engine initialized");
-WULFNET_LOG_WARN("Low memory: {} MB remaining", availableMemory);
-WULFNET_LOG_ERROR("Failed to load resource: {}", path);
-```
-
-### Platform Abstraction
-
-Unified API for platform-specific operations:
-
-```cpp
-#include "core/platform/Platform.h"
-
-using namespace WulfNet::Platform;
-
-SystemInfo info = getSystemInfo();
-LOG_INFO("CPU: {} cores, {} threads", info.numPhysicalCores, info.numLogicalCores);
-LOG_INFO("RAM: {} GB", info.totalSystemMemory / (1024 * 1024 * 1024));
-
-// High-precision timing
-f64 start = getTimeSeconds();
-// ... work ...
-f64 elapsed = getTimeSeconds() - start;
-
-// Thread utilities
-setThreadName("Worker_0");
-setThreadAffinity(0);  // Pin to core 0
-```
-
-## Performance Targets
-
-| Metric | Target |
-|--------|--------|
-| Frame Budget | 16.67ms (60 FPS) |
-| Physics Step | < 4ms for 10K rigid bodies |
-| Job Latency | < 1μs dispatch overhead |
-| Memory Overhead | < 5% fragmentation |
-
-## Development Roadmap
-
-### Phase 1: Foundation ✅ (Current)
-- [x] Build system and project structure
-- [x] Core types and utilities
-- [x] Memory allocators
-- [x] SIMD math library
-- [x] Job system
-- [x] Platform abstraction
-
-### Phase 2: Physics (Upcoming)
-- [ ] Collision detection (broadphase/narrowphase)
-- [ ] Rigid body dynamics
-- [ ] Constraint solver
-- [ ] Spatial partitioning
-
-### Phase 3: Rendering
-- [ ] Vulkan backend
-- [ ] DX12 backend
-- [ ] PBR materials
-- [ ] Shadow mapping
-- [ ] Post-processing
-
-### Phase 4: Game Systems
-- [ ] Entity-Component System
-- [ ] Scene management
-- [ ] Resource pipeline
-- [ ] Audio system
-
-## Contributing
-
-We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting pull requests.
-
-### Code Style
-
-- C++20 with modern idioms
-- RAII for resource management
-- No exceptions in hot paths
-- Prefer `constexpr` where possible
-- 4-space indentation
-
-## License
-
-WulfNet Engine is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+- [**Jolt Physics**](https://github.com/jrouwe/JoltPhysics) by Jorrit Rouwe - The foundation of this engine
+- The Jolt Physics community and contributors
 
 ---
 
-<p align="center">
-  <em>Built with ❤️ for high-performance game development</em>
-</p>
+*WulfNet Engine - Built for performance, designed for extensibility*
