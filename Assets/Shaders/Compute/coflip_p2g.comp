@@ -1,0 +1,188 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Particle to Grid (P2G) Compute Shader
+// =============================================================================
+// Transfers particle velocities and masses to MAC grid using cubic B-splines
+// Compile with: glslc -fshader-stage=compute coflip_p2g.comp -o coflip_p2g.spv
+// =============================================================================
+
+#version 450
+#extension GL_EXT_shader_atomic_float : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;      // 12 bytes
+    float vx;           // 4 bytes
+    float vy, vz;       // 8 bytes
+    vec3 vorticity;     // 12 bytes
+    float mass;         // 4 bytes
+    float volume;       // 4 bytes
+    uint materialId;    // 4 bytes
+    uint flags;         // 4 bytes
+    vec3 _pad;          // 12 bytes
+};
+
+// =============================================================================
+// Grid cell structure (48 bytes, matches CPU)
+// =============================================================================
+struct GridCell {
+    float u, v, w;      // Face velocities
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;      // 0=air, 1=fluid, 2=solid
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) buffer GridBuffer {
+    GridCell grid[];
+};
+
+// Atomic accumulation buffers (separate for thread safety)
+layout(std430, binding = 2) buffer GridVelocityU {
+    float gridU[];  // Accumulated u velocity * weight
+};
+
+layout(std430, binding = 3) buffer GridVelocityV {
+    float gridV[];  // Accumulated v velocity * weight
+};
+
+layout(std430, binding = 4) buffer GridVelocityW {
+    float gridW[];  // Accumulated w velocity * weight
+};
+
+layout(std430, binding = 5) buffer GridWeightU {
+    float weightU[];
+};
+
+layout(std430, binding = 6) buffer GridWeightV {
+    float weightV[];
+};
+
+layout(std430, binding = 7) buffer GridWeightW {
+    float weightW[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+} params;
+
+// =============================================================================
+// Cubic B-spline basis function (C2 continuous, excellent for fluids)
+// =============================================================================
+float bspline(float x) {
+    float ax = abs(x);
+    if (ax < 1.0) {
+        return 0.5 * ax * ax * ax - ax * ax + 2.0 / 3.0;
+    } else if (ax < 2.0) {
+        float t = 2.0 - ax;
+        return t * t * t / 6.0;
+    }
+    return 0.0;
+}
+
+float bsplineWeight(vec3 dist) {
+    return bspline(dist.x) * bspline(dist.y) * bspline(dist.z);
+}
+
+// =============================================================================
+// Grid index calculation
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+bool inBounds(int i, int j, int k) {
+    return i >= 0 && i < int(params.gridSizeX) &&
+           j >= 0 && j < int(params.gridSizeY) &&
+           k >= 0 && k < int(params.gridSizeZ);
+}
+
+// =============================================================================
+// Main P2G kernel
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x;
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    Particle p = particles[particleIdx];
+    
+    // Check if particle is active
+    if ((p.flags & 1u) == 0u) return;
+    
+    // Convert to grid coordinates
+    vec3 gpos = p.position * params.invCellSize;
+    
+    // Particle velocity
+    vec3 vel = vec3(p.vx, p.vy, p.vz);
+    
+    // Splat to grid using cubic B-spline (support radius = 2 cells)
+    int baseI = int(floor(gpos.x)) - 1;
+    int baseJ = int(floor(gpos.y)) - 1;
+    int baseK = int(floor(gpos.z)) - 1;
+    
+    for (int di = 0; di < 4; ++di) {
+        for (int dj = 0; dj < 4; ++dj) {
+            for (int dk = 0; dk < 4; ++dk) {
+                int i = baseI + di;
+                int j = baseJ + dj;
+                int k = baseK + dk;
+                
+                if (!inBounds(i, j, k)) continue;
+                
+                vec3 cellCenter = vec3(float(i) + 0.5, float(j) + 0.5, float(k) + 0.5);
+                vec3 dist = gpos - cellCenter;
+                
+                float weight = bsplineWeight(dist);
+                if (weight < 1e-8) continue;
+                
+                float massWeight = p.mass * weight;
+                uint idx = gridIndex(i, j, k);
+                
+                // Atomic accumulation for thread safety
+                // U-face (staggered at i+0.5)
+                vec3 uFacePos = vec3(float(i) + 1.0, float(j) + 0.5, float(k) + 0.5);
+                float uWeight = bsplineWeight(gpos - uFacePos) * p.mass;
+                if (uWeight > 1e-8) {
+                    atomicAdd(gridU[idx], vel.x * uWeight);
+                    atomicAdd(weightU[idx], uWeight);
+                }
+                
+                // V-face (staggered at j+0.5)
+                vec3 vFacePos = vec3(float(i) + 0.5, float(j) + 1.0, float(k) + 0.5);
+                float vWeight = bsplineWeight(gpos - vFacePos) * p.mass;
+                if (vWeight > 1e-8) {
+                    atomicAdd(gridV[idx], vel.y * vWeight);
+                    atomicAdd(weightV[idx], vWeight);
+                }
+                
+                // W-face (staggered at k+0.5)
+                vec3 wFacePos = vec3(float(i) + 0.5, float(j) + 0.5, float(k) + 1.0);
+                float wWeight = bsplineWeight(gpos - wFacePos) * p.mass;
+                if (wWeight > 1e-8) {
+                    atomicAdd(gridW[idx], vel.z * wWeight);
+                    atomicAdd(weightW[idx], wWeight);
+                }
+            }
+        }
+    }
+}

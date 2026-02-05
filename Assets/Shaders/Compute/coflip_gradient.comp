@@ -1,0 +1,99 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Apply Pressure Gradient Compute Shader
+// =============================================================================
+// Subtracts pressure gradient from velocity to enforce incompressibility
+// Compile with: glslc -fshader-stage=compute coflip_gradient.comp -o coflip_gradient.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer GridBuffer {
+    GridCell grid[];
+};
+
+layout(std430, binding = 1) readonly buffer PressureBuffer {
+    float pressure[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float dt;
+    float invCellSize;
+    float density;
+} params;
+
+// =============================================================================
+// Helper to get grid index with bounds check
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = clamp(i, 0, int(params.gridSizeX) - 1);
+    j = clamp(j, 0, int(params.gridSizeY) - 1);
+    k = clamp(k, 0, int(params.gridSizeZ) - 1);
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Main gradient subtraction kernel
+// =============================================================================
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    
+    if (gid.x >= int(params.gridSizeX) || gid.y >= int(params.gridSizeY) || gid.z >= int(params.gridSizeZ))
+        return;
+    
+    uint idx = gridIndex(gid.x, gid.y, gid.z);
+    
+    // Skip non-fluid cells
+    if (grid[idx].cellType != 1u) return;
+    
+    float p_center = pressure[idx];
+    
+    // Scale factor: dt / (density * cellSize)
+    float scale = params.dt * params.invCellSize / params.density;
+    
+    // Update u velocity (at face i+1/2)
+    if (gid.x < int(params.gridSizeX) - 1) {
+        float p_right = pressure[gridIndex(gid.x + 1, gid.y, gid.z)];
+        float gradX = (p_right - p_center) * params.invCellSize;
+        grid[idx].u -= gradX * scale;
+    }
+    
+    // Update v velocity (at face j+1/2)
+    if (gid.y < int(params.gridSizeY) - 1) {
+        float p_top = pressure[gridIndex(gid.x, gid.y + 1, gid.z)];
+        float gradY = (p_top - p_center) * params.invCellSize;
+        grid[idx].v -= gradY * scale;
+    }
+    
+    // Update w velocity (at face k+1/2)
+    if (gid.z < int(params.gridSizeZ) - 1) {
+        float p_front = pressure[gridIndex(gid.x, gid.y, gid.z + 1)];
+        float gradZ = (p_front - p_center) * params.invCellSize;
+        grid[idx].w -= gradZ * scale;
+    }
+    
+    // Store pressure in grid cell
+    grid[idx].pressure = p_center;
+}

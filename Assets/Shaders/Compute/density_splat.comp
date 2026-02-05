@@ -1,0 +1,123 @@
+// =============================================================================
+// WulfNet Engine - Density Splatting Compute Shader
+// =============================================================================
+// Splats particle densities onto grid for marching cubes surface extraction
+// Compile with: glslc -fshader-stage=compute density_splat.comp -o density_splat.spv
+// =============================================================================
+
+#version 450
+#extension GL_EXT_shader_atomic_float : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;
+    float vx;
+    float vy, vz;
+    vec3 vorticity;
+    float mass;
+    float volume;
+    uint materialId;
+    uint flags;
+    vec3 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) buffer DensityBuffer {
+    float density[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+    float splatRadius;     // In cells
+    float sigma;           // Gaussian sigma
+} params;
+
+// =============================================================================
+// Gaussian kernel for smooth splatting
+// =============================================================================
+float gaussian(float dist2, float sigma2) {
+    return exp(-dist2 / (2.0 * sigma2));
+}
+
+// =============================================================================
+// Grid index
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+bool inBounds(int i, int j, int k) {
+    return i >= 0 && i < int(params.gridSizeX) &&
+           j >= 0 && j < int(params.gridSizeY) &&
+           k >= 0 && k < int(params.gridSizeZ);
+}
+
+// =============================================================================
+// Main splatting kernel
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x;
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    Particle p = particles[particleIdx];
+    
+    // Check if particle is active
+    if ((p.flags & 1u) == 0u) return;
+    
+    // Convert to grid coordinates
+    vec3 gpos = p.position * params.invCellSize;
+    
+    // Splat radius in cells
+    int radius = int(ceil(params.splatRadius));
+    float sigma2 = params.sigma * params.sigma;
+    
+    int baseI = int(floor(gpos.x)) - radius;
+    int baseJ = int(floor(gpos.y)) - radius;
+    int baseK = int(floor(gpos.z)) - radius;
+    
+    int extent = 2 * radius + 1;
+    
+    for (int di = 0; di < extent; ++di) {
+        for (int dj = 0; dj < extent; ++dj) {
+            for (int dk = 0; dk < extent; ++dk) {
+                int i = baseI + di;
+                int j = baseJ + dj;
+                int k = baseK + dk;
+                
+                if (!inBounds(i, j, k)) continue;
+                
+                vec3 cellPos = vec3(float(i) + 0.5, float(j) + 0.5, float(k) + 0.5);
+                vec3 diff = gpos - cellPos;
+                float dist2 = dot(diff, diff);
+                
+                // Skip if outside Gaussian support
+                if (dist2 > params.splatRadius * params.splatRadius * 4.0) continue;
+                
+                float weight = gaussian(dist2, sigma2);
+                
+                // Atomic add for thread safety
+                uint idx = gridIndex(i, j, k);
+                atomicAdd(density[idx], weight);
+            }
+        }
+    }
+}

@@ -1,0 +1,37 @@
+// =============================================================================
+// WulfNet Engine - Vector Addition Compute Shader
+// =============================================================================
+// Simple example: C[i] = A[i] + B[i]
+// Compile with: glslc -fshader-stage=compute vector_add.comp -o vector_add.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Input buffers
+layout(std430, binding = 0) readonly buffer BufferA {
+    float a[];
+};
+
+layout(std430, binding = 1) readonly buffer BufferB {
+    float b[];
+};
+
+// Output buffer
+layout(std430, binding = 2) writeonly buffer BufferC {
+    float c[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint count;  // Number of elements
+} params;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index < params.count) {
+        c[index] = a[index] + b[index];
+    }
+}

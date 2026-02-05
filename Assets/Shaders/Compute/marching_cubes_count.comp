@@ -1,0 +1,103 @@
+// =============================================================================
+// WulfNet Engine - Marching Cubes Count Compute Shader
+// =============================================================================
+// First pass: count triangles per cell for prefix sum allocation
+// Compile with: glslc -fshader-stage=compute marching_cubes_count.comp -o marching_cubes_count.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Marching cubes triangle count lookup table (256 entries)
+// =============================================================================
+const int triCountTable[256] = int[256](
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 2,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 3,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 3,
+    2, 3, 3, 2, 3, 4, 4, 3, 3, 4, 4, 3, 4, 5, 5, 2,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 3,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 4,
+    2, 3, 3, 4, 3, 4, 2, 3, 3, 4, 4, 5, 4, 5, 3, 2,
+    3, 4, 4, 3, 4, 5, 3, 2, 4, 5, 5, 4, 5, 2, 4, 1,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 3,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 2, 4, 3, 4, 3, 5, 2,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 4,
+    3, 4, 4, 3, 4, 5, 5, 4, 4, 3, 5, 2, 5, 4, 2, 1,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 2, 3, 3, 2,
+    3, 4, 4, 5, 4, 5, 5, 2, 4, 3, 5, 4, 3, 2, 4, 1,
+    3, 4, 4, 5, 4, 5, 3, 4, 4, 5, 5, 2, 3, 4, 2, 1,
+    2, 3, 3, 2, 3, 4, 2, 1, 3, 2, 4, 1, 2, 1, 1, 0
+);
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) readonly buffer DensityBuffer {
+    float density[];
+};
+
+layout(std430, binding = 1) writeonly buffer TriCountBuffer {
+    uint triCount[];  // Triangle count per cell
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float isoLevel;
+} params;
+
+// =============================================================================
+// Grid index
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = clamp(i, 0, int(params.gridSizeX) - 1);
+    j = clamp(j, 0, int(params.gridSizeY) - 1);
+    k = clamp(k, 0, int(params.gridSizeZ) - 1);
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Main count kernel
+// =============================================================================
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    
+    // Need to process (gridSize-1)^3 cells
+    if (gid.x >= int(params.gridSizeX) - 1 ||
+        gid.y >= int(params.gridSizeY) - 1 ||
+        gid.z >= int(params.gridSizeZ) - 1)
+        return;
+    
+    // Sample density at 8 corners
+    float d[8];
+    d[0] = density[gridIndex(gid.x,     gid.y,     gid.z)];
+    d[1] = density[gridIndex(gid.x + 1, gid.y,     gid.z)];
+    d[2] = density[gridIndex(gid.x + 1, gid.y + 1, gid.z)];
+    d[3] = density[gridIndex(gid.x,     gid.y + 1, gid.z)];
+    d[4] = density[gridIndex(gid.x,     gid.y,     gid.z + 1)];
+    d[5] = density[gridIndex(gid.x + 1, gid.y,     gid.z + 1)];
+    d[6] = density[gridIndex(gid.x + 1, gid.y + 1, gid.z + 1)];
+    d[7] = density[gridIndex(gid.x,     gid.y + 1, gid.z + 1)];
+    
+    // Compute cube index
+    uint cubeIndex = 0u;
+    if (d[0] < params.isoLevel) cubeIndex |= 1u;
+    if (d[1] < params.isoLevel) cubeIndex |= 2u;
+    if (d[2] < params.isoLevel) cubeIndex |= 4u;
+    if (d[3] < params.isoLevel) cubeIndex |= 8u;
+    if (d[4] < params.isoLevel) cubeIndex |= 16u;
+    if (d[5] < params.isoLevel) cubeIndex |= 32u;
+    if (d[6] < params.isoLevel) cubeIndex |= 64u;
+    if (d[7] < params.isoLevel) cubeIndex |= 128u;
+    
+    // Look up triangle count
+    uint cellIdx = uint(gid.x) + uint(gid.y) * (params.gridSizeX - 1u) + 
+                   uint(gid.z) * (params.gridSizeX - 1u) * (params.gridSizeY - 1u);
+    triCount[cellIdx] = uint(triCountTable[cubeIndex]);
+}

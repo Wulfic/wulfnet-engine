@@ -286,6 +286,8 @@ set(SAMPLES_SRC_FILES
 	${SAMPLES_ROOT}/Tests/Water/BoatTest.h
 	${SAMPLES_ROOT}/Tests/Water/WaterShapeTest.cpp
 	${SAMPLES_ROOT}/Tests/Water/WaterShapeTest.h
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidTest.cpp
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidTest.h
 	${SAMPLES_ROOT}/Utils/ContactListenerImpl.cpp
 	${SAMPLES_ROOT}/Utils/ContactListenerImpl.h
 	${SAMPLES_ROOT}/Utils/DebugRendererSP.h
@@ -368,7 +370,7 @@ else()
 	add_executable(Samples ${SAMPLES_SRC_FILES})
 endif()
 target_include_directories(Samples PUBLIC ${SAMPLES_ROOT})
-target_link_libraries(Samples LINK_PUBLIC TestFramework)
+target_link_libraries(Samples LINK_PUBLIC TestFramework WulfNet)
 target_precompile_headers(Samples PUBLIC ${SAMPLES_ROOT}/Samples.h)
 
 # Set the correct working directory

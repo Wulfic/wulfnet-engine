@@ -1,0 +1,114 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Grid Normalization Compute Shader
+// =============================================================================
+// Normalizes accumulated velocities by weights after P2G
+// Compile with: glslc -fshader-stage=compute coflip_normalize.comp -o coflip_normalize.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer GridBuffer {
+    GridCell grid[];
+};
+
+layout(std430, binding = 1) readonly buffer GridVelocityU {
+    float gridU[];
+};
+
+layout(std430, binding = 2) readonly buffer GridVelocityV {
+    float gridV[];
+};
+
+layout(std430, binding = 3) readonly buffer GridVelocityW {
+    float gridW[];
+};
+
+layout(std430, binding = 4) readonly buffer GridWeightU {
+    float weightU[];
+};
+
+layout(std430, binding = 5) readonly buffer GridWeightV {
+    float weightV[];
+};
+
+layout(std430, binding = 6) readonly buffer GridWeightW {
+    float weightW[];
+};
+
+// Previous velocities for FLIP
+layout(std430, binding = 7) writeonly buffer PrevU {
+    float prevU[];
+};
+
+layout(std430, binding = 8) writeonly buffer PrevV {
+    float prevV[];
+};
+
+layout(std430, binding = 9) writeonly buffer PrevW {
+    float prevW[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float minWeight;  // Threshold for valid cell
+} params;
+
+// =============================================================================
+// Main normalization kernel
+// =============================================================================
+void main() {
+    uvec3 gid = gl_GlobalInvocationID;
+    
+    if (gid.x >= params.gridSizeX || gid.y >= params.gridSizeY || gid.z >= params.gridSizeZ)
+        return;
+    
+    uint idx = gid.x + gid.y * params.gridSizeX + gid.z * params.gridSizeX * params.gridSizeY;
+    
+    // Normalize velocities
+    float wU = weightU[idx];
+    float wV = weightV[idx];
+    float wW = weightW[idx];
+    
+    float u = (wU > params.minWeight) ? gridU[idx] / wU : 0.0;
+    float v = (wV > params.minWeight) ? gridV[idx] / wV : 0.0;
+    float w = (wW > params.minWeight) ? gridW[idx] / wW : 0.0;
+    
+    // Store normalized velocities
+    grid[idx].u = u;
+    grid[idx].v = v;
+    grid[idx].w = w;
+    grid[idx].weightU = wU;
+    grid[idx].weightV = wV;
+    grid[idx].weightW = wW;
+    
+    // Store for FLIP update
+    prevU[idx] = u;
+    prevV[idx] = v;
+    prevW[idx] = w;
+    
+    // Mark cell type based on weight (fluid if has particles)
+    float totalWeight = wU + wV + wW;
+    grid[idx].cellType = (totalWeight > params.minWeight * 3.0) ? 1u : 0u;
+}

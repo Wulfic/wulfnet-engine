@@ -53,6 +53,7 @@
 #include <Utils/SoftBodyCreator.h>
 #include <Utils/ReadData.h>
 #include <Renderer/DebugRendererImp.h>
+#include <Tests/WulfNet/WulfNetFluidTest.h>
 
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #include <fstream>
@@ -438,6 +439,29 @@ static TestNameAndRTTI sTools[] =
 	{ "Load Snapshot",						JPH_RTTI(LoadSnapshotTest) },
 };
 
+// WulfNet Fluid Tests
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRiverTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterfallTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetPuddleTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetLakeTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetViscosityTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetBuoyancyTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRagdollSwimTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetClothWaterTest)
+
+static TestNameAndRTTI sWulfNetTests[] =
+{
+	{ "River (MPM)",						JPH_RTTI(WulfNetRiverTest) },
+	{ "Waterfall (MPM)",					JPH_RTTI(WulfNetWaterfallTest) },
+	{ "Puddle (MPM)",						JPH_RTTI(WulfNetPuddleTest) },
+	{ "Lake (MPM)",							JPH_RTTI(WulfNetLakeTest) },
+	{ "Viscosity Comparison",				JPH_RTTI(WulfNetViscosityTest) },
+	{ "Buoyancy (Float/Sink)",				JPH_RTTI(WulfNetBuoyancyTest) },
+	{ "Ragdoll Swimming",					JPH_RTTI(WulfNetRagdollSwimTest) },
+	{ "Cloth in Water",						JPH_RTTI(WulfNetClothWaterTest) },
+};
+
 static TestCategory sAllCategories[] =
 {
 	{ "General", sGeneralTests, size(sGeneralTests) },
@@ -452,7 +476,8 @@ static TestCategory sAllCategories[] =
 	{ "Hair", sHairTests, size(sHairTests) },
 	{ "Broad Phase", sBroadPhaseTests, size(sBroadPhaseTests) },
 	{ "Convex Collision", sConvexCollisionTests, size(sConvexCollisionTests) },
-	{ "Tools", sTools, size(sTools) }
+	{ "Tools", sTools, size(sTools) },
+	{ "WulfNet Fluids", sWulfNetTests, size(sWulfNetTests) }
 };
 
 //-----------------------------------------------------------------------------
@@ -845,6 +870,20 @@ void SamplesApp::RunAllTests()
 {
 	mIsRunningAllTests = true;
 	StartTest(sAllCategories[0].mTests[0].mRTTI);
+}
+
+void SamplesApp::RunWulfNetTests()
+{
+	// Find WulfNet category and start its first test
+	for (const TestCategory &c : sAllCategories)
+	{
+		if (strcmp(c.mName, "WulfNet Fluids") == 0 && c.mNumTests > 0)
+		{
+			mIsRunningAllTests = true;
+			StartTest(c.mTests[0].mRTTI);
+			return;
+		}
+	}
 }
 
 bool SamplesApp::NextTest()
@@ -2147,6 +2186,7 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 
 	// Handle keyboard input
 	bool shift = mKeyboard->IsKeyPressed(EKey::LShift) || mKeyboard->IsKeyPressed(EKey::RShift);
+	bool ctrl = mKeyboard->IsKeyPressed(EKey::LControl) || mKeyboard->IsKeyPressed(EKey::RControl);
 #ifdef JPH_DEBUG_RENDERER
 	bool alt = mKeyboard->IsKeyPressed(EKey::LAlt) || mKeyboard->IsKeyPressed(EKey::RAlt);
 #endif // JPH_DEBUG_RENDERER
@@ -2177,7 +2217,10 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 			break;
 
 		case EKey::I:
-			mBodyDrawSettings.mDrawMassAndInertia = !mBodyDrawSettings.mDrawMassAndInertia;
+			if (ctrl)
+				RunWulfNetTests();  // Ctrl+I runs WulfNet fluid tests
+			else
+				mBodyDrawSettings.mDrawMassAndInertia = !mBodyDrawSettings.mDrawMassAndInertia;
 			break;
 
 		case EKey::Num1:

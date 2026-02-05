@@ -48,6 +48,9 @@ private:
 	// Run all tests one by one
 	void					RunAllTests();
 
+	// Run only WulfNet fluid tests (Ctrl+I)
+	void					RunWulfNetTests();
+
 	// Run the next test. Returns false when the application should exit.
 	bool					NextTest();
 

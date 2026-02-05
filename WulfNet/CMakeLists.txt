@@ -20,6 +20,20 @@ set(WULFNET_SOURCES
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.cpp
+
+    # Physics - Fluids (MPM)
+    Physics/Fluids/FluidSystem.cpp
+    Physics/Fluids/FluidGrid.cpp
+
+    # Physics - Fluids (CO-FLIP)
+    Physics/Fluids/COFLIPSystem.cpp
+    Physics/Fluids/FluidSurface.cpp
+
+    # GPU Compute
+    Compute/Vulkan/VulkanContext.cpp
+    Compute/Memory/ComputeBuffer.cpp
+    Compute/Shaders/ComputePipeline.cpp
+    Compute/Fluids/VulkanFluidCompute.cpp
 )
 
 set(WULFNET_HEADERS
@@ -32,6 +46,22 @@ set(WULFNET_HEADERS
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.h
+
+    # Physics - Fluids (MPM)
+    Physics/Fluids/FluidParticle.h
+    Physics/Fluids/FluidGrid.h
+    Physics/Fluids/FluidSystem.h
+
+    # Physics - Fluids (CO-FLIP)
+    Physics/Fluids/COFLIPSystem.h
+    Physics/Fluids/FluidSurface.h
+
+    # GPU Compute
+    Compute/Compute.h
+    Compute/Vulkan/VulkanContext.h
+    Compute/Memory/ComputeBuffer.h
+    Compute/Shaders/ComputePipeline.h
+    Compute/Fluids/VulkanFluidCompute.h
 )
 
 # Create the WulfNet library
@@ -54,6 +84,27 @@ target_include_directories(WulfNet
 
 # Link with Jolt
 target_link_libraries(WulfNet PUBLIC Jolt)
+
+# Find and link OpenMP for CPU parallelization
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(WulfNet PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(WulfNet PRIVATE WULFNET_HAS_OPENMP)
+    message(STATUS "  OpenMP found: CPU parallelization enabled")
+else()
+    message(STATUS "  OpenMP not found: CPU parallelization will be disabled")
+endif()
+
+# Find and link Vulkan for GPU compute
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND)
+    target_include_directories(WulfNet PRIVATE ${Vulkan_INCLUDE_DIRS})
+    # Don't link Vulkan library - we use dynamic loading
+    target_compile_definitions(WulfNet PRIVATE WULFNET_HAS_VULKAN)
+    message(STATUS "  Vulkan SDK found: GPU compute enabled")
+else()
+    message(STATUS "  Vulkan SDK not found: GPU compute will be disabled at runtime")
+endif()
 
 # MSVC-specific settings - disable some warnings that are too strict for our code
 if(MSVC)

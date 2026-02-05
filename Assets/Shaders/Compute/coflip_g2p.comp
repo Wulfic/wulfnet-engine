@@ -1,0 +1,244 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Grid to Particle (G2P) Compute Shader
+// =============================================================================
+// Transfers grid velocities back to particles using divergence-free interpolation
+// This is the KEY innovation of CO-FLIP - uses exact inverse of P2G
+// Compile with: glslc -fshader-stage=compute coflip_g2p.comp -o coflip_g2p.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// =============================================================================
+// Particle structure (64 bytes, matches CPU)
+// =============================================================================
+struct Particle {
+    vec3 position;
+    float vx;
+    float vy, vz;
+    vec3 vorticity;
+    float mass;
+    float volume;
+    uint materialId;
+    uint flags;
+    vec3 _pad;
+};
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) readonly buffer GridBuffer {
+    GridCell grid[];
+};
+
+// Previous velocities for FLIP update
+layout(std430, binding = 2) readonly buffer PrevU {
+    float prevU[];
+};
+
+layout(std430, binding = 3) readonly buffer PrevV {
+    float prevV[];
+};
+
+layout(std430, binding = 4) readonly buffer PrevW {
+    float prevW[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint particleCount;
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float invCellSize;
+    float dt;
+    float flipRatio;  // 0=PIC, 1=FLIP, typically 0.95-0.99
+} params;
+
+// =============================================================================
+// Cubic B-spline (same as P2G for exact inverse)
+// =============================================================================
+float bspline(float x) {
+    float ax = abs(x);
+    if (ax < 1.0) {
+        return 0.5 * ax * ax * ax - ax * ax + 2.0 / 3.0;
+    } else if (ax < 2.0) {
+        float t = 2.0 - ax;
+        return t * t * t / 6.0;
+    }
+    return 0.0;
+}
+
+float bsplineWeight(vec3 dist) {
+    return bspline(dist.x) * bspline(dist.y) * bspline(dist.z);
+}
+
+// =============================================================================
+// Grid index helpers
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = clamp(i, 0, int(params.gridSizeX) - 1);
+    j = clamp(j, 0, int(params.gridSizeY) - 1);
+    k = clamp(k, 0, int(params.gridSizeZ) - 1);
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+bool inBounds(int i, int j, int k) {
+    return i >= 0 && i < int(params.gridSizeX) &&
+           j >= 0 && j < int(params.gridSizeY) &&
+           k >= 0 && k < int(params.gridSizeZ);
+}
+
+// =============================================================================
+// Divergence-free velocity interpolation (CO-FLIP key feature)
+// Uses staggered grid with B-spline interpolation
+// =============================================================================
+vec3 interpolateVelocity(vec3 gpos) {
+    vec3 vel = vec3(0.0);
+    float totalWeight = 0.0;
+    
+    int baseI = int(floor(gpos.x)) - 1;
+    int baseJ = int(floor(gpos.y)) - 1;
+    int baseK = int(floor(gpos.z)) - 1;
+    
+    for (int di = 0; di < 4; ++di) {
+        for (int dj = 0; dj < 4; ++dj) {
+            for (int dk = 0; dk < 4; ++dk) {
+                int i = baseI + di;
+                int j = baseJ + dj;
+                int k = baseK + dk;
+                
+                if (!inBounds(i, j, k)) continue;
+                
+                uint idx = gridIndex(i, j, k);
+                
+                // Interpolate u at face (i+0.5, j, k)
+                vec3 uFacePos = vec3(float(i) + 0.5, float(j), float(k));
+                float wu = bsplineWeight(gpos - uFacePos);
+                vel.x += wu * grid[idx].u;
+                
+                // Interpolate v at face (i, j+0.5, k)
+                vec3 vFacePos = vec3(float(i), float(j) + 0.5, float(k));
+                float wv = bsplineWeight(gpos - vFacePos);
+                vel.y += wv * grid[idx].v;
+                
+                // Interpolate w at face (i, j, k+0.5)
+                vec3 wFacePos = vec3(float(i), float(j), float(k) + 0.5);
+                float ww = bsplineWeight(gpos - wFacePos);
+                vel.z += ww * grid[idx].w;
+                
+                totalWeight += wu + wv + ww;
+            }
+        }
+    }
+    
+    return vel;
+}
+
+// Interpolate previous velocity for FLIP
+vec3 interpolatePrevVelocity(vec3 gpos) {
+    vec3 vel = vec3(0.0);
+    
+    int baseI = int(floor(gpos.x)) - 1;
+    int baseJ = int(floor(gpos.y)) - 1;
+    int baseK = int(floor(gpos.z)) - 1;
+    
+    for (int di = 0; di < 4; ++di) {
+        for (int dj = 0; dj < 4; ++dj) {
+            for (int dk = 0; dk < 4; ++dk) {
+                int i = baseI + di;
+                int j = baseJ + dj;
+                int k = baseK + dk;
+                
+                if (!inBounds(i, j, k)) continue;
+                
+                uint idx = gridIndex(i, j, k);
+                
+                vec3 uFacePos = vec3(float(i) + 0.5, float(j), float(k));
+                float wu = bsplineWeight(gpos - uFacePos);
+                vel.x += wu * prevU[idx];
+                
+                vec3 vFacePos = vec3(float(i), float(j) + 0.5, float(k));
+                float wv = bsplineWeight(gpos - vFacePos);
+                vel.y += wv * prevV[idx];
+                
+                vec3 wFacePos = vec3(float(i), float(j), float(k) + 0.5);
+                float ww = bsplineWeight(gpos - wFacePos);
+                vel.z += ww * prevW[idx];
+            }
+        }
+    }
+    
+    return vel;
+}
+
+// =============================================================================
+// Main G2P kernel
+// =============================================================================
+void main() {
+    uint particleIdx = gl_GlobalInvocationID.x;
+    
+    if (particleIdx >= params.particleCount) return;
+    
+    Particle p = particles[particleIdx];
+    
+    // Check if particle is active
+    if ((p.flags & 1u) == 0u) return;
+    
+    // Convert to grid coordinates
+    vec3 gpos = p.position * params.invCellSize;
+    
+    // Get current and previous grid velocities
+    vec3 velGrid = interpolateVelocity(gpos);
+    vec3 velGridPrev = interpolatePrevVelocity(gpos);
+    
+    // Current particle velocity
+    vec3 velParticle = vec3(p.vx, p.vy, p.vz);
+    
+    // FLIP update: v_new = v_particle + (v_grid_new - v_grid_old)
+    vec3 velFLIP = velParticle + (velGrid - velGridPrev);
+    
+    // PIC update: v_new = v_grid_new
+    vec3 velPIC = velGrid;
+    
+    // Blend FLIP and PIC
+    vec3 velNew = mix(velPIC, velFLIP, params.flipRatio);
+    
+    // Update particle velocity
+    particles[particleIdx].vx = velNew.x;
+    particles[particleIdx].vy = velNew.y;
+    particles[particleIdx].vz = velNew.z;
+    
+    // Advect particle position
+    vec3 newPos = p.position + velNew * params.dt;
+    
+    // Clamp to domain bounds
+    float margin = params.cellSize * 0.5;
+    float maxX = float(params.gridSizeX) * params.cellSize - margin;
+    float maxY = float(params.gridSizeY) * params.cellSize - margin;
+    float maxZ = float(params.gridSizeZ) * params.cellSize - margin;
+    
+    newPos = clamp(newPos, vec3(margin), vec3(maxX, maxY, maxZ));
+    
+    particles[particleIdx].position = newPos;
+}

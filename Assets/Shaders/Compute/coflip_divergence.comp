@@ -1,0 +1,83 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Divergence Compute Shader
+// =============================================================================
+// Computes velocity divergence for pressure projection
+// Compile with: glslc -fshader-stage=compute coflip_divergence.comp -o coflip_divergence.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer GridBuffer {
+    GridCell grid[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float invCellSize;
+} params;
+
+// =============================================================================
+// Helper to get grid index with bounds check
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = clamp(i, 0, int(params.gridSizeX) - 1);
+    j = clamp(j, 0, int(params.gridSizeY) - 1);
+    k = clamp(k, 0, int(params.gridSizeZ) - 1);
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+// =============================================================================
+// Main divergence kernel
+// =============================================================================
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    
+    if (gid.x >= int(params.gridSizeX) || gid.y >= int(params.gridSizeY) || gid.z >= int(params.gridSizeZ))
+        return;
+    
+    uint idx = gridIndex(gid.x, gid.y, gid.z);
+    
+    // Only compute for fluid cells
+    if (grid[idx].cellType != 1u) {
+        grid[idx].divergence = 0.0;
+        return;
+    }
+    
+    // Get neighboring velocities (MAC grid: u at i+1/2, v at j+1/2, w at k+1/2)
+    float u_right = grid[gridIndex(gid.x + 1, gid.y, gid.z)].u;
+    float u_left  = grid[idx].u;
+    float v_top   = grid[gridIndex(gid.x, gid.y + 1, gid.z)].v;
+    float v_bot   = grid[idx].v;
+    float w_front = grid[gridIndex(gid.x, gid.y, gid.z + 1)].w;
+    float w_back  = grid[idx].w;
+    
+    // Compute divergence: div(u) = du/dx + dv/dy + dw/dz
+    float div = (u_right - u_left + v_top - v_bot + w_front - w_back) * params.invCellSize;
+    
+    grid[idx].divergence = div;
+    
+    // Initialize pressure to zero for solver
+    grid[idx].pressure = 0.0;
+}

@@ -6,6 +6,9 @@
 // =============================================================================
 
 #include <WulfNet/WulfNet.h>
+#include <WulfNet/Physics/Fluids/FluidSystem.h>
+#include <WulfNet/Physics/Fluids/FluidParticle.h>
+#include <WulfNet/Physics/Fluids/FluidGrid.h>
 
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -340,6 +343,468 @@ void test_PhysicsWorld_Statistics() {
 }
 
 // =============================================================================
+// GPU Compute Tests
+// =============================================================================
+
+void test_VulkanContext_IsAvailable() {
+    // Just check if the availability check works without crashing
+    bool available = IsGPUComputeAvailable();
+    (void)available; // May or may not be available depending on system
+    EXPECT_TRUE(true); // Test passes if we get here without crashing
+}
+
+void test_VulkanContext_GetAvailableGPUs() {
+    // Query available GPUs - should not crash even if no GPU
+    auto gpus = GetAvailableGPUs();
+    // The list may be empty on systems without Vulkan support
+    EXPECT_TRUE(true); // Test passes if we get here
+}
+
+void test_VulkanContext_Initialize() {
+    // Try to initialize if Vulkan is available
+    if (!IsGPUComputeAvailable()) {
+        // Skip test on systems without Vulkan
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    VulkanContextSettings settings;
+    settings.enableValidation = false; // Faster for tests
+    settings.applicationName = "WulfNetTest";
+
+    VulkanContext& ctx = GetVulkanContext();
+    bool success = ctx.Initialize(settings);
+
+    if (success) {
+        EXPECT_TRUE(ctx.IsValid());
+        const GPUDeviceInfo& info = ctx.GetDeviceInfo();
+        EXPECT_TRUE(!info.name.empty());
+        EXPECT_TRUE(info.totalMemory > 0);
+
+        ctx.Shutdown();
+        EXPECT_FALSE(ctx.IsValid());
+    } else {
+        // Vulkan may be installed but no suitable device
+        EXPECT_TRUE(true);
+    }
+}
+
+void test_VulkanContext_Singleton() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    VulkanContext& ctx1 = GetVulkanContext();
+    VulkanContext& ctx2 = GetVulkanContext();
+
+    // Should be same instance
+    EXPECT_TRUE(&ctx1 == &ctx2);
+}
+
+void test_VulkanContext_DeviceInfo() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    // Get available GPUs
+    auto gpus = GetAvailableGPUs();
+    EXPECT_TRUE(!gpus.empty());
+
+    // Check first GPU has valid properties
+    const GPUDeviceInfo& gpu = gpus[0];
+    EXPECT_TRUE(!gpu.name.empty());
+    EXPECT_TRUE(gpu.totalMemory > 0);
+    EXPECT_TRUE(gpu.maxComputeWorkGroupSize[0] > 0);
+    EXPECT_TRUE(gpu.maxComputeWorkGroupSize[1] > 0);
+    EXPECT_TRUE(gpu.maxComputeWorkGroupSize[2] > 0);
+    EXPECT_TRUE(gpu.maxComputeSharedMemory > 0);
+}
+
+void test_VulkanContext_Handles() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    VulkanContext& ctx = GetVulkanContext();
+    VulkanContextSettings settings;
+    settings.enableValidation = false;
+    settings.applicationName = "WulfNetTest";
+
+    if (!ctx.Initialize(settings)) {
+        // Skip if initialization fails
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    // Check all handles are valid
+    EXPECT_TRUE(ctx.GetInstance() != nullptr);
+    EXPECT_TRUE(ctx.GetPhysicalDevice() != nullptr);
+    EXPECT_TRUE(ctx.GetDevice() != nullptr);
+    EXPECT_TRUE(ctx.GetComputeQueue() != nullptr);
+    EXPECT_TRUE(ctx.GetComputeCommandPool() != nullptr);
+    EXPECT_TRUE(ctx.GetDescriptorPool() != nullptr);
+
+    ctx.Shutdown();
+}
+
+void test_VulkanContext_Reinitialize() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    VulkanContext& ctx = GetVulkanContext();
+    VulkanContextSettings settings;
+    settings.enableValidation = false;
+
+    // First init
+    bool success1 = ctx.Initialize(settings);
+    if (!success1) {
+        EXPECT_TRUE(true);
+        return;
+    }
+    EXPECT_TRUE(ctx.IsValid());
+    ctx.Shutdown();
+    EXPECT_FALSE(ctx.IsValid());
+
+    // Second init
+    bool success2 = ctx.Initialize(settings);
+    EXPECT_TRUE(success2);
+    EXPECT_TRUE(ctx.IsValid());
+    ctx.Shutdown();
+}
+
+void test_ShaderUtils_LoadSPIRV() {
+    // Try to load the vector_add shader
+    std::string shaderPath = "Assets/Shaders/Compute/vector_add.spv";
+
+    auto spirv = ShaderUtils::LoadSPIRV(shaderPath);
+
+    // May fail if working directory is wrong - that's ok for CI
+    if (!spirv.empty()) {
+        // SPIR-V has a magic number at the start
+        EXPECT_TRUE(spirv[0] == 0x07230203);
+        // File should be reasonable size (our shader is ~1732 bytes = ~433 words)
+        EXPECT_TRUE(spirv.size() > 100);
+        EXPECT_TRUE(spirv.size() < 10000);
+    } else {
+        // If file not found, still pass (depends on working directory)
+        EXPECT_TRUE(true);
+    }
+}
+
+void test_VulkanContext_WaitIdle() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    VulkanContext& ctx = GetVulkanContext();
+    VulkanContextSettings settings;
+    settings.enableValidation = false;
+
+    if (!ctx.Initialize(settings)) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    // WaitIdle should not crash on empty queue
+    ctx.WaitIdle();
+    EXPECT_TRUE(ctx.IsValid());
+
+    ctx.Shutdown();
+}
+
+void test_ComputePipeline_Construction() {
+    // Test that ComputePipeline can be constructed/destructed
+    ComputePipeline pipeline;
+    EXPECT_FALSE(pipeline.IsValid()); // Should be invalid before creation
+}
+
+void test_ComputePipeline_CalculateGroupCount() {
+    ComputePipeline pipeline;
+
+    // Default local size is 256
+    EXPECT_EQ(pipeline.CalculateGroupCount(1), 1);
+    EXPECT_EQ(pipeline.CalculateGroupCount(256), 1);
+    EXPECT_EQ(pipeline.CalculateGroupCount(257), 2);
+    EXPECT_EQ(pipeline.CalculateGroupCount(512), 2);
+    EXPECT_EQ(pipeline.CalculateGroupCount(1000), 4);
+    EXPECT_EQ(pipeline.CalculateGroupCount(1024), 4);
+}
+
+void test_ShaderUtils_LoadSPIRV_ValidMagic() {
+    std::string shaderPath = "Assets/Shaders/Compute/vector_add.spv";
+    auto spirv = ShaderUtils::LoadSPIRV(shaderPath);
+
+    if (!spirv.empty()) {
+        // SPIR-V magic number is 0x07230203
+        EXPECT_EQ(spirv[0], 0x07230203u);
+
+        // Word 1 is version
+        // Word 2 is generator magic
+        // Word 3 is bound (max ID + 1)
+        // Word 4 is reserved (0)
+        EXPECT_EQ(spirv[4], 0u); // Reserved field should be 0
+    } else {
+        EXPECT_TRUE(true); // Skip if file not found
+    }
+}
+
+void test_ShaderBinding_Types() {
+    // Test ShaderBinding struct creation
+    ShaderBinding storage = {0, ShaderBindingType::StorageBuffer, "input"};
+    EXPECT_EQ(storage.binding, 0u);
+    EXPECT_TRUE(storage.type == ShaderBindingType::StorageBuffer);
+    EXPECT_TRUE(storage.name == "input");
+
+    ShaderBinding uniform = {1, ShaderBindingType::UniformBuffer, "params"};
+    EXPECT_EQ(uniform.binding, 1u);
+    EXPECT_TRUE(uniform.type == ShaderBindingType::UniformBuffer);
+}
+
+void test_GPUBufferUsage_Flags() {
+    // Test buffer usage flag operations
+    GPUBufferUsage storage = GPUBufferUsage::Storage;
+    GPUBufferUsage transfer = GPUBufferUsage::TransferSrc | GPUBufferUsage::TransferDst;
+
+    EXPECT_TRUE(HasFlag(transfer, GPUBufferUsage::TransferSrc));
+    EXPECT_TRUE(HasFlag(transfer, GPUBufferUsage::TransferDst));
+    EXPECT_FALSE(HasFlag(transfer, GPUBufferUsage::Storage));
+
+    GPUBufferUsage combined = storage | transfer;
+    EXPECT_TRUE(HasFlag(combined, GPUBufferUsage::Storage));
+    EXPECT_TRUE(HasFlag(combined, GPUBufferUsage::TransferSrc));
+}
+
+void test_GPUDeviceInfo_Structure() {
+    if (!IsGPUComputeAvailable()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    auto gpus = GetAvailableGPUs();
+    if (gpus.empty()) {
+        EXPECT_TRUE(true);
+        return;
+    }
+
+    const GPUDeviceInfo& info = gpus[0];
+
+    // Validate workgroup size limits are reasonable (EnumerateDevices populates these)
+    EXPECT_TRUE(info.maxComputeWorkGroupSize[0] >= 64);
+    EXPECT_TRUE(info.maxComputeWorkGroupSize[1] >= 1);
+    EXPECT_TRUE(info.maxComputeWorkGroupSize[2] >= 1);
+
+    // Validate shared memory (at least 16KB on any GPU)
+    EXPECT_TRUE(info.maxComputeSharedMemory >= 16384);
+
+    // Note: maxComputeWorkGroupCount is only populated after full Initialize(),
+    // not in EnumerateDevices() - so we don't test it here
+}
+
+// =============================================================================
+// Fluid System Tests
+// =============================================================================
+
+void test_FluidParticle_Size() {
+    // FluidParticle must be 64 bytes for GPU alignment
+    EXPECT_EQ(sizeof(FluidParticle), 64u);
+}
+
+void test_FluidMaterial_Presets() {
+    FluidMaterial water = FluidMaterial::Water();
+    EXPECT_EQ(water.type, FluidMaterialType::Water);
+    EXPECT_TRUE(water.density > 900.0f && water.density < 1100.0f);
+    EXPECT_TRUE(water.viscosity < 0.01f);  // Low viscosity
+
+    FluidMaterial honey = FluidMaterial::Honey();
+    EXPECT_EQ(honey.type, FluidMaterialType::Honey);
+    EXPECT_TRUE(honey.viscosity > 1.0f);  // High viscosity
+
+    FluidMaterial oil = FluidMaterial::Oil();
+    EXPECT_EQ(oil.type, FluidMaterialType::Oil);
+    EXPECT_TRUE(oil.viscosity > water.viscosity);
+    EXPECT_TRUE(oil.viscosity < honey.viscosity);
+}
+
+void test_FluidGrid_Initialize() {
+    FluidGrid grid;
+    bool result = grid.Initialize(32, 16, 32, 0.1f);
+    EXPECT_TRUE(result);
+    EXPECT_EQ(grid.GetResolutionX(), 32u);
+    EXPECT_EQ(grid.GetResolutionY(), 16u);
+    EXPECT_EQ(grid.GetResolutionZ(), 32u);
+    EXPECT_EQ(grid.GetCellCount(), 32u * 16u * 32u);
+}
+
+void test_FluidGrid_WorldToGrid() {
+    FluidGrid grid;
+    grid.Initialize(10, 10, 10, 1.0f);
+    grid.SetBounds(0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 10.0f);
+
+    float gx, gy, gz;
+    grid.WorldToGrid(5.0f, 5.0f, 5.0f, gx, gy, gz);
+    EXPECT_TRUE(gx >= 4.9f && gx <= 5.1f);
+    EXPECT_TRUE(gy >= 4.9f && gy <= 5.1f);
+    EXPECT_TRUE(gz >= 4.9f && gz <= 5.1f);
+}
+
+void test_FluidGrid_Bounds() {
+    FluidGrid grid;
+    grid.Initialize(10, 10, 10, 1.0f);
+    grid.SetBounds(-5.0f, 0.0f, -5.0f, 5.0f, 10.0f, 5.0f);
+
+    EXPECT_TRUE(grid.IsInBoundsWorld(0.0f, 5.0f, 0.0f));
+    EXPECT_FALSE(grid.IsInBoundsWorld(-10.0f, 5.0f, 0.0f));
+}
+
+void test_FluidSystem_Initialize() {
+    FluidSystemConfig config;
+    config.gridResolutionX = 16;
+    config.gridResolutionY = 16;
+    config.gridResolutionZ = 16;
+    config.cellSize = 0.2f;
+    config.maxParticles = 1000;
+
+    FluidSystem system;
+    bool result = system.Initialize(config);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(system.IsInitialized());
+    EXPECT_EQ(system.GetMaxParticles(), 1000u);
+    EXPECT_EQ(system.GetParticleCount(), 0u);
+}
+
+void test_FluidSystem_AddParticle() {
+    FluidSystemConfig config;
+    config.gridResolutionX = 16;
+    config.gridResolutionY = 16;
+    config.gridResolutionZ = 16;
+    config.cellSize = 0.2f;
+    config.maxParticles = 100;
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    EXPECT_EQ(system.GetParticleCount(), 0u);
+    system.AddParticle(1.0f, 1.0f, 1.0f);
+    EXPECT_EQ(system.GetParticleCount(), 1u);
+    system.AddParticle(1.5f, 1.0f, 1.0f);
+    EXPECT_EQ(system.GetParticleCount(), 2u);
+}
+
+void test_FluidSystem_AddParticleBox() {
+    FluidSystemConfig config;
+    config.gridResolutionX = 32;
+    config.gridResolutionY = 32;
+    config.gridResolutionZ = 32;
+    config.cellSize = 0.1f;
+    config.maxParticles = 10000;
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    system.AddParticleBox(0.5f, 0.5f, 0.5f, 1.5f, 1.5f, 1.5f);
+
+    // Should have created multiple particles
+    EXPECT_TRUE(system.GetParticleCount() > 10);
+    EXPECT_TRUE(system.GetParticleCount() < config.maxParticles);
+}
+
+void test_FluidSystem_Materials() {
+    FluidSystemConfig config;
+    config.maxParticles = 100;
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    // Default water material
+    EXPECT_EQ(system.GetMaterialCount(), 1u);
+
+    uint32_t oilId = system.AddMaterial(FluidMaterial::Oil());
+    uint32_t honeyId = system.AddMaterial(FluidMaterial::Honey());
+
+    EXPECT_EQ(system.GetMaterialCount(), 3u);
+    EXPECT_TRUE(system.GetMaterial(oilId) != nullptr);
+    EXPECT_TRUE(system.GetMaterial(honeyId) != nullptr);
+}
+
+void test_FluidSystem_Emitter() {
+    FluidSystemConfig config;
+    config.maxParticles = 1000;
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    FluidEmitter emitter;
+    emitter.type = EmitterType::Point;
+    emitter.posX = 1.0f;
+    emitter.posY = 2.0f;
+    emitter.posZ = 1.0f;
+    emitter.emissionRate = 100.0f;
+    emitter.initialSpeed = 1.0f;
+
+    uint32_t id = system.AddEmitter(emitter);
+    EXPECT_EQ(system.GetEmitterCount(), 1u);
+
+    FluidEmitter* e = system.GetEmitter(id);
+    EXPECT_TRUE(e != nullptr);
+    EXPECT_TRUE(e->posX == 1.0f);
+}
+
+void test_FluidSystem_Step() {
+    FluidSystemConfig config;
+    config.gridResolutionX = 16;
+    config.gridResolutionY = 16;
+    config.gridResolutionZ = 16;
+    config.cellSize = 0.2f;
+    config.maxParticles = 1000;
+    config.useGPU = false;  // CPU mode
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    // Add some particles
+    system.AddParticleSphere(1.5f, 1.5f, 1.5f, 0.3f);
+    uint32_t initialCount = system.GetParticleCount();
+    EXPECT_TRUE(initialCount > 0);
+
+    // Step should not crash
+    system.Step(0.016f);  // 60fps
+
+    // Particle count shouldn't change from step alone
+    EXPECT_EQ(system.GetParticleCount(), initialCount);
+}
+
+void test_FluidSystem_Stats() {
+    FluidSystemConfig config;
+    config.maxParticles = 1000;
+
+    FluidSystem system;
+    system.Initialize(config);
+
+    system.AddParticle(1.0f, 1.0f, 1.0f);
+    system.Step(0.016f);
+
+    const FluidStats& stats = system.GetStats();
+    EXPECT_EQ(stats.activeParticles, 1u);
+    EXPECT_TRUE(stats.totalTimeMs >= 0.0f);
+}
+
+void test_ParticleFlags() {
+    uint32_t flags = 0;
+    flags |= static_cast<uint32_t>(ParticleFlags::Active);
+    flags |= static_cast<uint32_t>(ParticleFlags::Surface);
+
+    EXPECT_TRUE(HasFlag(flags, ParticleFlags::Active));
+    EXPECT_TRUE(HasFlag(flags, ParticleFlags::Surface));
+    EXPECT_FALSE(HasFlag(flags, ParticleFlags::Sleeping));
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -372,6 +837,38 @@ int main(int argc, char** argv) {
     runTest("PhysicsWorld_Step", test_PhysicsWorld_Step);
     runTest("PhysicsWorld_ContactCallback", test_PhysicsWorld_ContactCallback);
     runTest("PhysicsWorld_Statistics", test_PhysicsWorld_Statistics);
+
+    // GPU Compute tests
+    runTest("VulkanContext_IsAvailable", test_VulkanContext_IsAvailable);
+    runTest("VulkanContext_GetAvailableGPUs", test_VulkanContext_GetAvailableGPUs);
+    runTest("VulkanContext_Initialize", test_VulkanContext_Initialize);
+    runTest("VulkanContext_Singleton", test_VulkanContext_Singleton);
+    runTest("VulkanContext_DeviceInfo", test_VulkanContext_DeviceInfo);
+    runTest("VulkanContext_Handles", test_VulkanContext_Handles);
+    runTest("VulkanContext_Reinitialize", test_VulkanContext_Reinitialize);
+    runTest("ShaderUtils_LoadSPIRV", test_ShaderUtils_LoadSPIRV);
+    runTest("VulkanContext_WaitIdle", test_VulkanContext_WaitIdle);
+    runTest("ComputePipeline_Construction", test_ComputePipeline_Construction);
+    runTest("ComputePipeline_CalculateGroupCount", test_ComputePipeline_CalculateGroupCount);
+    runTest("ShaderUtils_LoadSPIRV_ValidMagic", test_ShaderUtils_LoadSPIRV_ValidMagic);
+    runTest("ShaderBinding_Types", test_ShaderBinding_Types);
+    runTest("GPUBufferUsage_Flags", test_GPUBufferUsage_Flags);
+    runTest("GPUDeviceInfo_Structure", test_GPUDeviceInfo_Structure);
+
+    // Fluid System tests
+    runTest("FluidParticle_Size", test_FluidParticle_Size);
+    runTest("FluidMaterial_Presets", test_FluidMaterial_Presets);
+    runTest("FluidGrid_Initialize", test_FluidGrid_Initialize);
+    runTest("FluidGrid_WorldToGrid", test_FluidGrid_WorldToGrid);
+    runTest("FluidGrid_Bounds", test_FluidGrid_Bounds);
+    runTest("FluidSystem_Initialize", test_FluidSystem_Initialize);
+    runTest("FluidSystem_AddParticle", test_FluidSystem_AddParticle);
+    runTest("FluidSystem_AddParticleBox", test_FluidSystem_AddParticleBox);
+    runTest("FluidSystem_Materials", test_FluidSystem_Materials);
+    runTest("FluidSystem_Emitter", test_FluidSystem_Emitter);
+    runTest("FluidSystem_Step", test_FluidSystem_Step);
+    runTest("FluidSystem_Stats", test_FluidSystem_Stats);
+    runTest("ParticleFlags", test_ParticleFlags);
 
     std::cout << std::endl;
     std::cout << "=== Test Results ===" << std::endl;

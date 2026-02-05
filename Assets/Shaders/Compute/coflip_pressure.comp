@@ -1,0 +1,137 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP Pressure Jacobi Solver Compute Shader
+// =============================================================================
+// Iterative Jacobi solver for pressure Poisson equation
+// Run multiple times for convergence
+// Compile with: glslc -fshader-stage=compute coflip_pressure.comp -o coflip_pressure.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer GridBuffer {
+    GridCell grid[];
+};
+
+// Double-buffered pressure for Jacobi iteration
+layout(std430, binding = 1) readonly buffer PressureIn {
+    float pressureIn[];
+};
+
+layout(std430, binding = 2) writeonly buffer PressureOut {
+    float pressureOut[];
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float cellSize;
+    float omega;  // SOR relaxation factor (1.0-1.9, typically 1.5)
+} params;
+
+// =============================================================================
+// Helper to get grid index with bounds check
+// =============================================================================
+uint gridIndex(int i, int j, int k) {
+    i = clamp(i, 0, int(params.gridSizeX) - 1);
+    j = clamp(j, 0, int(params.gridSizeY) - 1);
+    k = clamp(k, 0, int(params.gridSizeZ) - 1);
+    return uint(i) + uint(j) * params.gridSizeX + uint(k) * params.gridSizeX * params.gridSizeY;
+}
+
+bool isFluid(int i, int j, int k) {
+    if (i < 0 || i >= int(params.gridSizeX) ||
+        j < 0 || j >= int(params.gridSizeY) ||
+        k < 0 || k >= int(params.gridSizeZ))
+        return false;
+    return grid[gridIndex(i, j, k)].cellType == 1u;
+}
+
+// =============================================================================
+// Main pressure solver kernel (one Jacobi iteration)
+// =============================================================================
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    
+    if (gid.x >= int(params.gridSizeX) || gid.y >= int(params.gridSizeY) || gid.z >= int(params.gridSizeZ))
+        return;
+    
+    uint idx = gridIndex(gid.x, gid.y, gid.z);
+    
+    // Only solve for fluid cells
+    if (grid[idx].cellType != 1u) {
+        pressureOut[idx] = 0.0;
+        return;
+    }
+    
+    // Count neighbors and sum pressures
+    float sumP = 0.0;
+    float numNeighbors = 0.0;
+    
+    // +X neighbor
+    if (isFluid(gid.x + 1, gid.y, gid.z)) {
+        sumP += pressureIn[gridIndex(gid.x + 1, gid.y, gid.z)];
+        numNeighbors += 1.0;
+    }
+    // -X neighbor
+    if (isFluid(gid.x - 1, gid.y, gid.z)) {
+        sumP += pressureIn[gridIndex(gid.x - 1, gid.y, gid.z)];
+        numNeighbors += 1.0;
+    }
+    // +Y neighbor
+    if (isFluid(gid.x, gid.y + 1, gid.z)) {
+        sumP += pressureIn[gridIndex(gid.x, gid.y + 1, gid.z)];
+        numNeighbors += 1.0;
+    }
+    // -Y neighbor
+    if (isFluid(gid.x, gid.y - 1, gid.z)) {
+        sumP += pressureIn[gridIndex(gid.x, gid.y - 1, gid.z)];
+        numNeighbors += 1.0;
+    }
+    // +Z neighbor
+    if (isFluid(gid.x, gid.y, gid.z + 1)) {
+        sumP += pressureIn[gridIndex(gid.x, gid.y, gid.z + 1)];
+        numNeighbors += 1.0;
+    }
+    // -Z neighbor
+    if (isFluid(gid.x, gid.y, gid.z - 1)) {
+        sumP += pressureIn[gridIndex(gid.x, gid.y, gid.z - 1)];
+        numNeighbors += 1.0;
+    }
+    
+    // Avoid division by zero
+    if (numNeighbors < 0.5) {
+        pressureOut[idx] = 0.0;
+        return;
+    }
+    
+    // Jacobi iteration: p_new = (sum_neighbors - divergence * h^2) / num_neighbors
+    // With SOR: p_new = (1-omega)*p_old + omega*p_jacobi
+    float h2 = params.cellSize * params.cellSize;
+    float div = grid[idx].divergence;
+    
+    float pJacobi = (sumP - div * h2) / numNeighbors;
+    float pOld = pressureIn[idx];
+    
+    pressureOut[idx] = mix(pOld, pJacobi, params.omega);
+}

@@ -1,0 +1,84 @@
+// =============================================================================
+// WulfNet Engine - CO-FLIP External Forces Compute Shader
+// =============================================================================
+// Applies gravity and other external forces to grid velocities
+// Compile with: glslc -fshader-stage=compute coflip_forces.comp -o coflip_forces.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Grid cell structure
+// =============================================================================
+struct GridCell {
+    float u, v, w;
+    float pressure;
+    float divergence;
+    float weightU, weightV, weightW;
+    uint cellType;
+    vec2 _pad;
+};
+
+// =============================================================================
+// Buffers
+// =============================================================================
+layout(std430, binding = 0) buffer GridBuffer {
+    GridCell grid[];
+};
+
+layout(std430, binding = 1) readonly buffer SolidBuffer {
+    uint solidCells[];  // 1 = solid, 0 = not solid
+};
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gridSizeX;
+    uint gridSizeY;
+    uint gridSizeZ;
+    float dt;
+    float gravityX;
+    float gravityY;
+    float gravityZ;
+} params;
+
+// =============================================================================
+// Main forces kernel
+// =============================================================================
+void main() {
+    uvec3 gid = gl_GlobalInvocationID;
+    
+    if (gid.x >= params.gridSizeX || gid.y >= params.gridSizeY || gid.z >= params.gridSizeZ)
+        return;
+    
+    uint idx = gid.x + gid.y * params.gridSizeX + gid.z * params.gridSizeX * params.gridSizeY;
+    
+    // Only apply forces to fluid cells
+    if (grid[idx].cellType != 1u) return;
+    
+    // Check if this cell or neighbors are solid
+    bool isSolid = (solidCells[idx] != 0u);
+    if (isSolid) {
+        grid[idx].u = 0.0;
+        grid[idx].v = 0.0;
+        grid[idx].w = 0.0;
+        grid[idx].cellType = 2u;
+        return;
+    }
+    
+    // Apply gravity (and any other body forces)
+    grid[idx].u += params.gravityX * params.dt;
+    grid[idx].v += params.gravityY * params.dt;
+    grid[idx].w += params.gravityZ * params.dt;
+    
+    // Boundary conditions (simple: zero velocity at domain edges)
+    if (gid.x == 0) grid[idx].u = max(0.0, grid[idx].u);
+    if (gid.x == params.gridSizeX - 1) grid[idx].u = min(0.0, grid[idx].u);
+    if (gid.y == 0) grid[idx].v = max(0.0, grid[idx].v);
+    if (gid.y == params.gridSizeY - 1) grid[idx].v = min(0.0, grid[idx].v);
+    if (gid.z == 0) grid[idx].w = max(0.0, grid[idx].w);
+    if (gid.z == params.gridSizeZ - 1) grid[idx].w = min(0.0, grid[idx].w);
+}
