@@ -5,19 +5,30 @@
 // =============================================================================
 
 #include "VulkanFluidCompute.h"
+#include <vulkan/vulkan.h>
 #include <fstream>
 #include <filesystem>
 #include <iostream>  // For fallback logging
 
-// Vulkan function pointer extern (from VulkanContext)
-extern PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr_External;
+// Jolt includes for compute system integration
+// Jolt/Jolt.h must be included first to define macros like JPH_NAMESPACE_BEGIN
+#ifdef JPH_USE_VK
+#include <Jolt/Jolt.h>
+#include <Jolt/Core/RTTI.h>
+#include <Jolt/Compute/VK/ComputeSystemVK.h>
+#include <Jolt/Compute/VK/ComputeSystemVKImpl.h>
+#endif
 
 namespace WulfNet {
+
+// Vulkan function pointer extern (from VulkanContext, defined in WulfNet namespace)
+extern PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr_External;
 
 // Simple logging fallback (Logger macros require category)
 #define FLUID_LOG_INFO(msg)  std::cout << "[FluidCompute] " << msg << std::endl
 #define FLUID_LOG_WARN(msg)  std::cout << "[FluidCompute WARN] " << msg << std::endl
 #define FLUID_LOG_ERROR(msg) std::cerr << "[FluidCompute ERROR] " << msg << std::endl
+#define FLUID_LOG_DEBUG(msg) std::cout << "[FluidCompute DEBUG] " << msg << std::endl
 
 // =============================================================================
 // Local Vulkan Function Pointers for Batched Dispatch
@@ -37,11 +48,18 @@ static bool s_fluidFunctionsLoaded = false;
 
 static bool LoadFluidVkFunctions(VkInstance instance) {
     if (s_fluidFunctionsLoaded) return true;
-    if (!vkGetInstanceProcAddr_External) return false;
+
+    // Try external pointer first, fall back to standard vkGetInstanceProcAddr
+    PFN_vkGetInstanceProcAddr getProc = vkGetInstanceProcAddr_External;
+    if (!getProc) {
+        // Use the standard Vulkan function from vulkan-1.lib
+        getProc = vkGetInstanceProcAddr;
+    }
+    if (!getProc) return false;
 
     #define LOAD_VK_FUNC(name) \
         s_##name = reinterpret_cast<PFN_##name>( \
-            vkGetInstanceProcAddr_External(instance, #name))
+            getProc(instance, #name))
 
     LOAD_VK_FUNC(vkAllocateCommandBuffers);
     LOAD_VK_FUNC(vkFreeCommandBuffers);
@@ -103,8 +121,8 @@ bool VulkanFluidCompute::Initialize(VulkanContext* vulkan, const COFLIPConfig& c
     m_maxParticles = m_gridTotalCells * config.particlesPerCell;
 
     FLUID_LOG_INFO("VulkanFluidCompute: Initializing GPU compute");
-    FLUID_LOG_INFO("  Grid: {}x{}x{} = {} cells", m_gridSizeX, m_gridSizeY, m_gridSizeZ, m_gridTotalCells);
-    FLUID_LOG_INFO("  Max particles: {}", m_maxParticles);
+    FLUID_LOG_INFO("  Grid: " << m_gridSizeX << "x" << m_gridSizeY << "x" << m_gridSizeZ << " = " << m_gridTotalCells << " cells");
+    FLUID_LOG_INFO("  Max particles: " << m_maxParticles);
 
     // Create GPU buffers
     if (!CreateBuffers(config)) {
@@ -123,6 +141,98 @@ bool VulkanFluidCompute::Initialize(VulkanContext* vulkan, const COFLIPConfig& c
     return true;
 }
 
+bool VulkanFluidCompute::InitializeFromJolt(::JPH::ComputeSystem* joltCompute, const COFLIPConfig& config,
+                                             const std::string& shaderPath) {
+#ifdef JPH_USE_VK
+    if (m_initialized) {
+        FLUID_LOG_WARN("VulkanFluidCompute already initialized");
+        return true;
+    }
+
+    if (!joltCompute) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Null Jolt compute system");
+        return false;
+    }
+
+    // Cast to ComputeSystemVK to get Vulkan objects
+    // Note: This works because RendererVK inherits from ComputeSystemVKImpl
+    // Use JPH's custom RTTI system instead of dynamic_cast (RTTI is disabled)
+    ::JPH::ComputeSystemVK* vkCompute = ::JPH::DynamicCast<::JPH::ComputeSystemVK>(joltCompute);
+    if (!vkCompute) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Jolt compute system is not Vulkan-based");
+        return false;
+    }
+
+    // Try to get instance from ComputeSystemVKImpl (for full Vulkan access)
+    // Use JPH's custom RTTI system
+    ::JPH::ComputeSystemVKImpl* vkImpl = ::JPH::DynamicCast<::JPH::ComputeSystemVKImpl>(joltCompute);
+    VkInstance instance = VK_NULL_HANDLE;
+    if (vkImpl) {
+        instance = vkImpl->GetInstance();
+    }
+
+    if (instance == VK_NULL_HANDLE) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Could not get Vulkan instance from Jolt");
+        return false;
+    }
+
+    // Load Vulkan function pointers
+    if (!LoadFluidVkFunctions(instance)) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Failed to load Vulkan functions");
+        return false;
+    }
+
+    // Store Jolt compute system and cached Vulkan handles
+    m_joltCompute = vkCompute;
+    m_vkInstance = instance;
+    m_vkPhysicalDevice = vkCompute->GetPhysicalDevice();
+    m_vkDevice = vkCompute->GetDevice();
+    m_vkComputeQueueFamily = vkCompute->GetComputeQueueFamilyIndex();
+
+    // Get compute queue from device
+    vkGetDeviceQueue(m_vkDevice, m_vkComputeQueueFamily, 0, &m_vkComputeQueue);
+
+    // Initialize the global VulkanContext from Jolt's handles
+    // This allows ComputeBuffer and ComputePipeline to work properly
+    if (!InitializeVulkanContextFromExternal(
+            m_vkInstance, m_vkPhysicalDevice, m_vkDevice,
+            m_vkComputeQueue, m_vkComputeQueueFamily)) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Failed to initialize VulkanContext from Jolt handles");
+        return false;
+    }
+    FLUID_LOG_INFO("  VulkanContext initialized from Jolt handles");
+
+    m_gridSizeX = config.gridSizeX;
+    m_gridSizeY = config.gridSizeY;
+    m_gridSizeZ = config.gridSizeZ;
+    m_gridTotalCells = m_gridSizeX * m_gridSizeY * m_gridSizeZ;
+    m_maxParticles = m_gridTotalCells * config.particlesPerCell;
+
+    FLUID_LOG_INFO("VulkanFluidCompute: Initializing GPU compute (Jolt integration)");
+    FLUID_LOG_INFO("  Grid: " << m_gridSizeX << "x" << m_gridSizeY << "x" << m_gridSizeZ << " = " << m_gridTotalCells << " cells");
+    FLUID_LOG_INFO("  Max particles: " << m_maxParticles);
+
+    // Create GPU buffers
+    if (!CreateBuffers(config)) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Failed to create GPU buffers");
+        return false;
+    }
+
+    // Load and create compute pipelines
+    if (!LoadShaders(shaderPath)) {
+        FLUID_LOG_ERROR("VulkanFluidCompute: Failed to load shaders");
+        return false;
+    }
+
+    m_initialized = true;
+    FLUID_LOG_INFO("VulkanFluidCompute: GPU compute ready (Jolt integration)");
+    return true;
+#else
+    FLUID_LOG_ERROR("VulkanFluidCompute: Jolt Vulkan support not enabled (JPH_USE_VK)");
+    return false;
+#endif
+}
+
 void VulkanFluidCompute::Shutdown() {
     if (!m_initialized) return;
 
@@ -131,6 +241,9 @@ void VulkanFluidCompute::Shutdown() {
     // Wait for any pending GPU work
     if (m_vulkan && m_vulkan->IsValid()) {
         m_vulkan->WaitIdle();
+    } else if (m_vkDevice != VK_NULL_HANDLE) {
+        // Jolt path: wait on device directly
+        vkDeviceWaitIdle(m_vkDevice);
     }
 
     // Destroy pipelines
@@ -182,9 +295,9 @@ bool VulkanFluidCompute::CreateBuffers(const COFLIPConfig& config) {
             GPUMemoryLocation::DeviceLocal
         );
 
-        FLUID_LOG_INFO("  Particle buffer: {} MB", m_particleBuffer->GetSizeBytes() / (1024 * 1024));
-        FLUID_LOG_INFO("  Grid buffer: {} MB", m_gridBuffer->GetSizeBytes() / (1024 * 1024));
-        FLUID_LOG_INFO("  Prev velocity buffer: {} MB", m_prevVelocityBuffer->GetSizeBytes() / (1024 * 1024));
+        FLUID_LOG_INFO("  Particle buffer: " << (m_particleBuffer->GetSizeBytes() / (1024 * 1024)) << " MB");
+        FLUID_LOG_INFO("  Grid buffer: " << (m_gridBuffer->GetSizeBytes() / (1024 * 1024)) << " MB");
+        FLUID_LOG_INFO("  Prev velocity buffer: " << (m_prevVelocityBuffer->GetSizeBytes() / (1024 * 1024)) << " MB");
 
         // Sorting buffers for cache-coherent particle access
         m_cellIndexBuffer = std::make_unique<ComputeBuffer<uint32_t>>(
@@ -225,16 +338,16 @@ bool VulkanFluidCompute::CreateBuffers(const COFLIPConfig& config) {
             GPUMemoryLocation::DeviceLocal
         );
 
-        FLUID_LOG_INFO("  Sorting buffers: {} MB total",
-            (m_cellIndexBuffer->GetSizeBytes() + m_particleIndexBuffer->GetSizeBytes() +
+        size_t sortingSize = m_cellIndexBuffer->GetSizeBytes() + m_particleIndexBuffer->GetSizeBytes() +
              m_tempCellIndexBuffer->GetSizeBytes() + m_tempParticleIndexBuffer->GetSizeBytes() +
-             m_histogramBuffer->GetSizeBytes() + m_sortedParticleBuffer->GetSizeBytes()) / (1024 * 1024));
+             m_histogramBuffer->GetSizeBytes() + m_sortedParticleBuffer->GetSizeBytes();
+        FLUID_LOG_INFO("  Sorting buffers: " << (sortingSize / (1024 * 1024)) << " MB total");
 
         return m_particleBuffer->IsValid() && m_gridBuffer->IsValid() && m_prevVelocityBuffer->IsValid() &&
                m_cellIndexBuffer->IsValid() && m_sortedParticleBuffer->IsValid();
     }
     catch (const std::exception& e) {
-        FLUID_LOG_ERROR("  Buffer creation failed: {}", e.what());
+        FLUID_LOG_ERROR("  Buffer creation failed: " << e.what());
         return false;
     }
 }
@@ -264,28 +377,29 @@ bool VulkanFluidCompute::LoadShaders(const std::string& shaderPath) {
 
         // Check if file exists
         if (!std::filesystem::exists(path)) {
-            FLUID_LOG_ERROR("  Shader not found: {}", path);
+            FLUID_LOG_ERROR("  Shader not found: " << path);
             return nullptr;
         }
 
         auto pipeline = std::make_unique<ComputePipeline>();
         if (!pipeline->CreateFromFile(path, fluidBindings, pushRange)) {
-            FLUID_LOG_ERROR("  Failed to create pipeline: {}", name);
+            FLUID_LOG_ERROR("  Failed to create pipeline: " << name);
             return nullptr;
         }
 
-        FLUID_LOG_INFO("  Loaded shader: {}", name);
+        FLUID_LOG_INFO("  Loaded shader: " << name);
         return pipeline;
     };
 
     // Load all CO-FLIP shaders
-    m_p2gPipeline = loadPipeline("coflip_p2g", 256, 1, 1);
+    // NOTE: local sizes MUST match the shader's layout(local_size_x, ...)
+    m_p2gPipeline = loadPipeline("coflip_p2g", 128, 1, 1);       // Matches coflip_p2g_optimized.comp
     m_normalizePipeline = loadPipeline("coflip_normalize", 8, 8, 8);
     m_forcesPipeline = loadPipeline("coflip_forces", 8, 8, 8);
     m_divergencePipeline = loadPipeline("coflip_divergence", 8, 8, 8);
     m_pressurePipeline = loadPipeline("coflip_pressure", 8, 8, 8);
     m_gradientPipeline = loadPipeline("coflip_gradient", 8, 8, 8);
-    m_g2pPipeline = loadPipeline("coflip_g2p", 256, 1, 1);
+    m_g2pPipeline = loadPipeline("coflip_g2p", 64, 1, 1);        // Matches coflip_g2p_optimized.comp
 
     // Check all pipelines loaded successfully
     bool allLoaded = m_p2gPipeline && m_normalizePipeline && m_forcesPipeline &&
@@ -324,17 +438,17 @@ bool VulkanFluidCompute::LoadShaders(const std::string& shaderPath) {
     {
         std::string path = shaderPath + "/" + name + ".spv";
         if (!std::filesystem::exists(path)) {
-            FLUID_LOG_DEBUG("  Optional shader not found: {}", path);
+            FLUID_LOG_DEBUG("  Optional shader not found: " << path);
             return nullptr;
         }
 
         auto pipeline = std::make_unique<ComputePipeline>();
         if (!pipeline->CreateFromFile(path, bindings, pushRange)) {
-            FLUID_LOG_DEBUG("  Failed to create optional pipeline: {}", name);
+            FLUID_LOG_DEBUG("  Failed to create optional pipeline: " << name);
             return nullptr;
         }
 
-        FLUID_LOG_INFO("  Loaded optional shader: {}", name);
+        FLUID_LOG_INFO("  Loaded optional shader: " << name);
         return pipeline;
     };
 
@@ -359,7 +473,7 @@ bool VulkanFluidCompute::UploadParticles(const std::vector<COFLIPParticle>& part
     if (!m_initialized || !m_particleBuffer) return false;
     if (count == 0) return true;
     if (count > m_maxParticles) {
-        FLUID_LOG_WARN("Particle count {} exceeds max {}, clamping", count, m_maxParticles);
+        FLUID_LOG_WARN("Particle count " << count << " exceeds max " << m_maxParticles << ", clamping");
         count = m_maxParticles;
     }
     return m_particleBuffer->Upload(particles.data(), count, 0);
@@ -377,7 +491,7 @@ bool VulkanFluidCompute::DownloadParticles(std::vector<COFLIPParticle>& particle
 bool VulkanFluidCompute::UploadGrid(const std::vector<COFLIPCell>& grid) {
     if (!m_initialized || !m_gridBuffer) return false;
     if (grid.size() != m_gridTotalCells) {
-        FLUID_LOG_ERROR("Grid size mismatch: {} vs {}", grid.size(), m_gridTotalCells);
+        FLUID_LOG_ERROR("Grid size mismatch: " << grid.size() << " vs " << m_gridTotalCells);
         return false;
     }
     return m_gridBuffer->Upload(grid.data(), m_gridTotalCells, 0);
@@ -569,10 +683,11 @@ void VulkanFluidCompute::RecordMemoryBarrier(VkCommandBuffer cmd) {
 void VulkanFluidCompute::RecordP2G(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_p2gPipeline || !m_p2gPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_p2gPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_p2gPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_p2gPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_p2gPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_p2gPipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -583,10 +698,11 @@ void VulkanFluidCompute::RecordP2G(VkCommandBuffer cmd, const FluidSimParams& pa
 void VulkanFluidCompute::RecordNormalize(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_normalizePipeline || !m_normalizePipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_normalizePipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_normalizePipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_normalizePipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_normalizePipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_normalizePipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -599,10 +715,11 @@ void VulkanFluidCompute::RecordNormalize(VkCommandBuffer cmd, const FluidSimPara
 void VulkanFluidCompute::RecordForces(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_forcesPipeline || !m_forcesPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_forcesPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_forcesPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_forcesPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_forcesPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_forcesPipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -615,10 +732,11 @@ void VulkanFluidCompute::RecordForces(VkCommandBuffer cmd, const FluidSimParams&
 void VulkanFluidCompute::RecordDivergence(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_divergencePipeline || !m_divergencePipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_divergencePipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_divergencePipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_divergencePipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_divergencePipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_divergencePipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -631,10 +749,11 @@ void VulkanFluidCompute::RecordDivergence(VkCommandBuffer cmd, const FluidSimPar
 void VulkanFluidCompute::RecordPressure(VkCommandBuffer cmd, const FluidSimParams& params, uint32_t iterations) {
     if (!m_pressurePipeline || !m_pressurePipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_pressurePipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pressurePipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_pressurePipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_pressurePipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_pressurePipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -654,10 +773,11 @@ void VulkanFluidCompute::RecordPressure(VkCommandBuffer cmd, const FluidSimParam
 void VulkanFluidCompute::RecordGradient(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_gradientPipeline || !m_gradientPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_gradientPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_gradientPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_gradientPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_gradientPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_gradientPipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -670,10 +790,11 @@ void VulkanFluidCompute::RecordGradient(VkCommandBuffer cmd, const FluidSimParam
 void VulkanFluidCompute::RecordG2P(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_g2pPipeline || !m_g2pPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_g2pPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_g2pPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_g2pPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_g2pPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_g2pPipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -682,7 +803,13 @@ void VulkanFluidCompute::RecordG2P(VkCommandBuffer cmd, const FluidSimParams& pa
 }
 
 void VulkanFluidCompute::DispatchFullStepBatched(const FluidSimParams& params) {
-    if (!m_initialized || !m_vulkan) return;
+    if (!m_initialized) return;
+
+    // Use global VulkanContext (works for both WulfNet and Jolt paths)
+    if (!IsVulkanContextInitialized()) {
+        FLUID_LOG_ERROR("VulkanContext not initialized for batched dispatch");
+        return;
+    }
 
     // Ensure bindings are up to date
     m_p2gPipeline->BindBuffer(0, *m_particleBuffer);
@@ -721,8 +848,8 @@ void VulkanFluidCompute::DispatchFullStepBatched(const FluidSimParams& params) {
     m_g2pPipeline->UpdateBindings();
 
     // Allocate a single command buffer for the entire simulation step
-    VkDevice device = m_vulkan->GetDevice();
-    VkCommandPool cmdPool = m_vulkan->GetComputeCommandPool();
+    VkDevice device = GetVulkanContext().GetDevice();
+    VkCommandPool cmdPool = GetVulkanContext().GetComputeCommandPool();
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -781,7 +908,7 @@ void VulkanFluidCompute::DispatchFullStepBatched(const FluidSimParams& params) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmdBuffer;
 
-    VkQueue queue = m_vulkan->GetComputeQueue();
+    VkQueue queue = GetVulkanContext().GetComputeQueue();
     s_vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
     s_vkQueueWaitIdle(queue);  // Only ONE wait for entire simulation!
 
@@ -815,23 +942,22 @@ static PFN_vkWaitForFences s_vkWaitForFences = nullptr;
 static PFN_vkResetFences s_vkResetFences = nullptr;
 
 void VulkanFluidCompute::BeginAsyncSimulation(const FluidSimParams& params) {
-    if (!m_initialized || !m_vulkan || m_asyncInProgress) return;
+    if (!m_initialized || !IsVulkanContextInitialized() || m_asyncInProgress) return;
 
     // Load fence functions if needed
-    if (!s_vkCreateFence && vkGetInstanceProcAddr_External) {
-        VkInstance instance = m_vulkan->GetInstance();
-        s_vkCreateFence = reinterpret_cast<PFN_vkCreateFence>(
-            vkGetInstanceProcAddr_External(instance, "vkCreateFence"));
-        s_vkDestroyFence = reinterpret_cast<PFN_vkDestroyFence>(
-            vkGetInstanceProcAddr_External(instance, "vkDestroyFence"));
-        s_vkWaitForFences = reinterpret_cast<PFN_vkWaitForFences>(
-            vkGetInstanceProcAddr_External(instance, "vkWaitForFences"));
-        s_vkResetFences = reinterpret_cast<PFN_vkResetFences>(
-            vkGetInstanceProcAddr_External(instance, "vkResetFences"));
+    if (!s_vkCreateFence) {
+        VkInstance instance = GetVulkanContext().GetInstance();
+        auto getProc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetVulkanInstanceProcAddr());
+        if (getProc) {
+            s_vkCreateFence = reinterpret_cast<PFN_vkCreateFence>(getProc(instance, "vkCreateFence"));
+            s_vkDestroyFence = reinterpret_cast<PFN_vkDestroyFence>(getProc(instance, "vkDestroyFence"));
+            s_vkWaitForFences = reinterpret_cast<PFN_vkWaitForFences>(getProc(instance, "vkWaitForFences"));
+            s_vkResetFences = reinterpret_cast<PFN_vkResetFences>(getProc(instance, "vkResetFences"));
+        }
     }
 
-    VkDevice device = m_vulkan->GetDevice();
-    VkCommandPool cmdPool = m_vulkan->GetComputeCommandPool();
+    VkDevice device = GetVulkanContext().GetDevice();
+    VkCommandPool cmdPool = GetVulkanContext().GetComputeCommandPool();
 
     // Create fence if needed
     if (m_asyncFence == VK_NULL_HANDLE) {
@@ -917,22 +1043,22 @@ void VulkanFluidCompute::BeginAsyncSimulation(const FluidSimParams& params) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_asyncCmdBuffer;
 
-    VkQueue queue = m_vulkan->GetComputeQueue();
+    VkQueue queue = GetVulkanContext().GetComputeQueue();
     s_vkQueueSubmit(queue, 1, &submitInfo, m_asyncFence);
 
     m_asyncInProgress = true;
 }
 
 void VulkanFluidCompute::WaitForSimulation() {
-    if (!m_asyncInProgress || !m_vulkan) return;
+    if (!m_asyncInProgress || !IsVulkanContextInitialized()) return;
 
-    VkDevice device = m_vulkan->GetDevice();
+    VkDevice device = GetVulkanContext().GetDevice();
 
     // Wait for the fence
     s_vkWaitForFences(device, 1, &m_asyncFence, VK_TRUE, UINT64_MAX);
 
     // Free command buffer
-    VkCommandPool cmdPool = m_vulkan->GetComputeCommandPool();
+    VkCommandPool cmdPool = GetVulkanContext().GetComputeCommandPool();
     s_vkFreeCommandBuffers(device, cmdPool, 1, &m_asyncCmdBuffer);
     m_asyncCmdBuffer = VK_NULL_HANDLE;
 
@@ -946,10 +1072,11 @@ void VulkanFluidCompute::WaitForSimulation() {
 void VulkanFluidCompute::RecordCellIndexCompute(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_cellIndexPipeline || !m_cellIndexPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_cellIndexPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_cellIndexPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_cellIndexPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_cellIndexPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
     s_vkCmdPushConstants(cmd, m_cellIndexPipeline->GetVkPipelineLayout(),
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 
@@ -963,10 +1090,11 @@ void VulkanFluidCompute::RecordRadixSort(VkCommandBuffer cmd, const FluidSimPara
     // Simplified radix sort - in production would do full 4-pass radix sort
     // For now, just compute cell indices which still helps with locality
 
+    VkDescriptorSet descSet = m_radixSortPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_radixSortPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_radixSortPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_radixSortPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
 
     struct SortParams {
         uint32_t particleCount;
@@ -1001,10 +1129,11 @@ void VulkanFluidCompute::RecordRadixSort(VkCommandBuffer cmd, const FluidSimPara
 void VulkanFluidCompute::RecordParticleReorder(VkCommandBuffer cmd, const FluidSimParams& params) {
     if (!m_reorderPipeline || !m_reorderPipeline->IsValid()) return;
 
+    VkDescriptorSet descSet = m_reorderPipeline->GetVkDescriptorSet();
     s_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_reorderPipeline->GetVkPipeline());
     s_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               m_reorderPipeline->GetVkPipelineLayout(), 0, 1,
-                              &m_reorderPipeline->GetVkDescriptorSet(), 0, nullptr);
+                              &descSet, 0, nullptr);
 
     struct ReorderParams {
         uint32_t particleCount;
@@ -1019,7 +1148,7 @@ void VulkanFluidCompute::RecordParticleReorder(VkCommandBuffer cmd, const FluidS
 }
 
 void VulkanFluidCompute::SortParticlesByCell(const FluidSimParams& params) {
-    if (!m_initialized || !m_vulkan) return;
+    if (!m_initialized || !IsVulkanContextInitialized()) return;
     if (!m_cellIndexPipeline || !m_cellIndexBuffer) return;
 
     // Update bindings for sorting pipelines
@@ -1044,8 +1173,8 @@ void VulkanFluidCompute::SortParticlesByCell(const FluidSimParams& params) {
         m_reorderPipeline->UpdateBindings();
     }
 
-    VkDevice device = m_vulkan->GetDevice();
-    VkCommandPool cmdPool = m_vulkan->GetComputeCommandPool();
+    VkDevice device = GetVulkanContext().GetDevice();
+    VkCommandPool cmdPool = GetVulkanContext().GetComputeCommandPool();
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1080,7 +1209,7 @@ void VulkanFluidCompute::SortParticlesByCell(const FluidSimParams& params) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmdBuffer;
 
-    VkQueue queue = m_vulkan->GetComputeQueue();
+    VkQueue queue = GetVulkanContext().GetComputeQueue();
     s_vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
     s_vkQueueWaitIdle(queue);
 

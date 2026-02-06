@@ -22,6 +22,9 @@ struct VkQueue_T;
 struct VkCommandPool_T;
 struct VkDescriptorPool_T;
 struct VkPipelineCache_T;
+struct VkCommandBuffer_T;
+struct VkFence_T;
+struct VkDescriptorSet_T;
 
 typedef VkInstance_T* VkInstance;
 typedef VkPhysicalDevice_T* VkPhysicalDevice;
@@ -30,6 +33,11 @@ typedef VkQueue_T* VkQueue;
 typedef VkCommandPool_T* VkCommandPool;
 typedef VkDescriptorPool_T* VkDescriptorPool;
 typedef VkPipelineCache_T* VkPipelineCache;
+typedef VkCommandBuffer_T* VkCommandBuffer;
+typedef VkFence_T* VkFence;
+typedef VkDescriptorSet_T* VkDescriptorSet;
+
+#define VK_NULL_HANDLE nullptr
 
 namespace WulfNet {
 
@@ -97,6 +105,24 @@ public:
     /// Initialize Vulkan instance and select a compute-capable device
     bool Initialize(const VulkanContextSettings& settings = {});
 
+    /// Initialize from external Vulkan handles (e.g., from Jolt renderer)
+    /// This allows WulfNet compute to share a Vulkan context with another system.
+    /// Note: Command pools, descriptor pools, and pipeline cache will be created
+    /// by WulfNet, but the instance/device/queue are borrowed (not owned).
+    /// @param instance External Vulkan instance
+    /// @param physicalDevice External physical device
+    /// @param device External logical device
+    /// @param computeQueue External compute-capable queue
+    /// @param computeQueueFamilyIndex Queue family index for compute
+    /// @param settings Settings for descriptor pool sizing, etc.
+    /// @return true if initialization succeeded
+    bool InitializeFromExternal(VkInstance instance,
+                                 VkPhysicalDevice physicalDevice,
+                                 VkDevice device,
+                                 VkQueue computeQueue,
+                                 uint32_t computeQueueFamilyIndex,
+                                 const VulkanContextSettings& settings = {});
+
     /// Shutdown and release all Vulkan resources
     void Shutdown();
 
@@ -150,6 +176,7 @@ private:
     void DestroyDebugMessenger();
 
     bool m_initialized = false;
+    bool m_ownsDevice = true;  // false when initialized from external handles
 
     VkInstance m_instance = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
@@ -180,7 +207,22 @@ bool IsVulkanContextInitialized();
 /// Initialize the global Vulkan context with custom settings
 bool InitializeVulkanContext(const VulkanContextSettings& settings = {});
 
+/// Initialize the global Vulkan context from external Vulkan handles
+/// This is used when integrating with an external renderer (e.g., Jolt)
+bool InitializeVulkanContextFromExternal(VkInstance instance,
+                                          VkPhysicalDevice physicalDevice,
+                                          VkDevice device,
+                                          VkQueue computeQueue,
+                                          uint32_t computeQueueFamilyIndex,
+                                          const VulkanContextSettings& settings = {});
+
 /// Shutdown the global Vulkan context
 void ShutdownVulkanContext();
+
+/// Get the loaded vkGetInstanceProcAddr function pointer
+/// Returns nullptr if not loaded yet
+typedef void (*PFN_vkVoidFunction)(void);
+typedef PFN_vkVoidFunction (*PFN_vkGetInstanceProcAddrType)(VkInstance instance, const char* pName);
+PFN_vkGetInstanceProcAddrType GetVulkanInstanceProcAddr();
 
 } // namespace WulfNet

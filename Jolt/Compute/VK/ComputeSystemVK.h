@@ -31,6 +31,12 @@ public:
 	/// Access to the Vulkan device
 	VkDevice						GetDevice() const												{ return mDevice; }
 
+	/// Access to the physical device (for WulfNet fluid compute integration)
+	VkPhysicalDevice				GetPhysicalDevice() const										{ return mPhysicalDevice; }
+
+	/// Access to compute queue family index (for WulfNet fluid compute integration)
+	uint32							GetComputeQueueFamilyIndex() const								{ return mComputeQueueIndex; }
+
 	/// Allow the application to override buffer creation and memory mapping in case it uses its own allocator
 	virtual bool					CreateBuffer(VkDeviceSize inSize, VkBufferUsageFlags inUsage, VkMemoryPropertyFlags inProperties, BufferVK &outBuffer) = 0;
 	virtual void					FreeBuffer(BufferVK &ioBuffer) = 0;

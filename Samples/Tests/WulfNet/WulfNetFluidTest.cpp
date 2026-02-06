@@ -88,7 +88,7 @@ void WulfNetFluidTest::Initialize()
 	mFluidConfig.flipRatio = 0.99f;
 	mFluidConfig.pressureIterations = 30;
 	mFluidConfig.particlesPerCell = 8;
-	mFluidConfig.useGPU = false;  // CPU for now, GPU coming soon
+	mFluidConfig.useGPU = true;  // GPU accelerated via Jolt compute system
 
 	// Surface configuration (marching cubes)
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
@@ -100,9 +100,15 @@ void WulfNetFluidTest::Initialize()
 	mSurfaceConfig.isoLevel = 0.4f;
 	mSurfaceConfig.useGPU = false;
 
-	// Initialize fluid system
-	mFluidSystem.Initialize(mFluidConfig);
-	mFluidSurface.Initialize(mSurfaceConfig);
+	// Initialize fluid system with Jolt's compute system for GPU acceleration
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		// Fallback to CPU if no compute system available
+		mFluidConfig.useGPU = false;
+		mFluidSystem.Initialize(mFluidConfig);
+	}
+	mFluidSurface.Initialize(mSurfaceConfig);;
 
 	// Let derived class set up specific fluid scenario
 	SetupFluid();
@@ -131,6 +137,10 @@ void WulfNetFluidTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
 
 	// Step fluid simulation
 	mFluidSystem.Step(inParams.mDeltaTime);
+
+	// Sync particles from GPU for rendering and surface generation
+	// (no-op if running on CPU)
+	mFluidSystem.SyncParticlesFromGPU();
 
 	// Generate surface mesh from particles
 	if (mDrawSurface)
@@ -317,7 +327,11 @@ void WulfNetRiverTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create initial water body
@@ -389,7 +403,11 @@ void WulfNetWaterfallTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create pool at bottom
@@ -440,7 +458,11 @@ void WulfNetPuddleTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create small puddle
@@ -469,7 +491,11 @@ void WulfNetLakeTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create large body of water
@@ -523,7 +549,11 @@ void WulfNetViscosityTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create water blob (will flow quickly)
@@ -550,7 +580,11 @@ void WulfNetBuoyancyTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create pool
@@ -630,7 +664,11 @@ void WulfNetRagdollSwimTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create swimming pool
@@ -715,7 +753,11 @@ void WulfNetClothWaterTest::SetupFluid()
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
-	mFluidSystem.Initialize(mFluidConfig);
+	if (mComputeSystem) {
+		mFluidSystem.InitializeFromJolt(mFluidConfig, mComputeSystem);
+	} else {
+		mFluidSystem.Initialize(mFluidConfig);
+	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
 	// Create water pool

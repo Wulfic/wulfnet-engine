@@ -332,6 +332,102 @@ bool VulkanContext::Initialize(const VulkanContextSettings& settings) {
     return true;
 }
 
+bool VulkanContext::InitializeFromExternal(VkInstance instance,
+                                            VkPhysicalDevice physicalDevice,
+                                            VkDevice device,
+                                            VkQueue computeQueue,
+                                            uint32_t computeQueueFamilyIndex,
+                                            const VulkanContextSettings& settings) {
+    WULFNET_ZONE();
+
+    if (m_initialized) {
+        WULFNET_WARNING("Compute", "VulkanContext already initialized");
+        return true;
+    }
+
+    if (!instance || !physicalDevice || !device || !computeQueue) {
+        WULFNET_ERROR("Compute", "InitializeFromExternal: Invalid Vulkan handles provided");
+        return false;
+    }
+
+    WULFNET_INFO("Compute", "Initializing Vulkan compute context from external handles...");
+
+    // Load Vulkan function pointers
+    if (!LoadVulkanFunctions()) {
+        return false;
+    }
+
+    // Store external handles (we don't own these)
+    m_instance = instance;
+    m_physicalDevice = physicalDevice;
+    m_device = device;
+    m_computeQueue = computeQueue;
+    m_transferQueue = computeQueue;  // Use compute queue for transfers too
+    m_ownsDevice = false;  // We don't own these handles
+
+    // Load instance and device functions
+    LoadInstanceFunctions(m_instance);
+    LoadDeviceFunctions(m_instance, m_device);
+
+    // Query device info
+    if (g_vkFuncs.vkGetPhysicalDeviceProperties) {
+        VkPhysicalDeviceProperties props;
+        g_vkFuncs.vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+        m_deviceInfo.name = props.deviceName;
+        m_deviceInfo.vendorId = props.vendorID;
+        m_deviceInfo.deviceId = props.deviceID;
+        m_deviceInfo.maxComputeWorkGroupSize[0] = props.limits.maxComputeWorkGroupSize[0];
+        m_deviceInfo.maxComputeWorkGroupSize[1] = props.limits.maxComputeWorkGroupSize[1];
+        m_deviceInfo.maxComputeWorkGroupSize[2] = props.limits.maxComputeWorkGroupSize[2];
+        m_deviceInfo.maxComputeWorkGroupCount[0] = props.limits.maxComputeWorkGroupCount[0];
+        m_deviceInfo.maxComputeWorkGroupCount[1] = props.limits.maxComputeWorkGroupCount[1];
+        m_deviceInfo.maxComputeWorkGroupCount[2] = props.limits.maxComputeWorkGroupCount[2];
+        m_deviceInfo.maxComputeSharedMemory = props.limits.maxComputeSharedMemorySize;
+        m_deviceInfo.timestampPeriod = props.limits.timestampPeriod;
+        m_deviceInfo.supportsTimestampQueries = props.limits.timestampComputeAndGraphics;
+    }
+
+    if (g_vkFuncs.vkGetPhysicalDeviceMemoryProperties) {
+        VkPhysicalDeviceMemoryProperties memProps;
+        g_vkFuncs.vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProps);
+        for (uint32_t i = 0; i < memProps.memoryHeapCount; i++) {
+            if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                m_deviceInfo.totalMemory = memProps.memoryHeaps[i].size;
+                break;
+            }
+        }
+    }
+
+    m_deviceInfo.computeQueueFamilyIndex = computeQueueFamilyIndex;
+    m_deviceInfo.transferQueueFamilyIndex = computeQueueFamilyIndex;
+    m_deviceInfo.supportsAsyncCompute = true;  // Assume yes if we got a compute queue
+
+    // Create our own command pools, descriptor pool, and pipeline cache
+    // These we DO own and must clean up
+    if (!CreateCommandPools()) {
+        Shutdown();
+        return false;
+    }
+
+    if (!CreateDescriptorPool(settings)) {
+        Shutdown();
+        return false;
+    }
+
+    if (!CreatePipelineCache()) {
+        Shutdown();
+        return false;
+    }
+
+    m_initialized = true;
+
+    WULFNET_INFO("Compute", "Vulkan compute context initialized from external handles");
+    WULFNET_INFO("Compute", std::string("  GPU: ") + m_deviceInfo.name);
+    WULFNET_INFO("Compute", "  Memory: " + std::to_string(m_deviceInfo.totalMemory / (1024 * 1024)) + " MB");
+
+    return true;
+}
+
 void VulkanContext::Shutdown() {
     if (!m_initialized && !m_instance) return;
 
@@ -361,15 +457,22 @@ void VulkanContext::Shutdown() {
         m_computeCommandPool = nullptr;
     }
 
-    if (m_device && g_vkFuncs.vkDestroyDevice) {
-        g_vkFuncs.vkDestroyDevice(m_device, nullptr);
+    // Only destroy device and instance if we created them
+    if (m_ownsDevice) {
+        if (m_device && g_vkFuncs.vkDestroyDevice) {
+            g_vkFuncs.vkDestroyDevice(m_device, nullptr);
+            m_device = nullptr;
+        }
+
+        DestroyDebugMessenger();
+
+        if (m_instance && g_vkFuncs.vkDestroyInstance) {
+            g_vkFuncs.vkDestroyInstance(m_instance, nullptr);
+            m_instance = nullptr;
+        }
+    } else {
+        // Just clear our references to external handles
         m_device = nullptr;
-    }
-
-    DestroyDebugMessenger();
-
-    if (m_instance && g_vkFuncs.vkDestroyInstance) {
-        g_vkFuncs.vkDestroyInstance(m_instance, nullptr);
         m_instance = nullptr;
     }
 
@@ -851,11 +954,28 @@ bool InitializeVulkanContext(const VulkanContextSettings& settings) {
     return GetVulkanContext().Initialize(settings);
 }
 
+bool InitializeVulkanContextFromExternal(VkInstance instance,
+                                          VkPhysicalDevice physicalDevice,
+                                          VkDevice device,
+                                          VkQueue computeQueue,
+                                          uint32_t computeQueueFamilyIndex,
+                                          const VulkanContextSettings& settings) {
+    return GetVulkanContext().InitializeFromExternal(
+        instance, physicalDevice, device, computeQueue, computeQueueFamilyIndex, settings);
+}
+
 void ShutdownVulkanContext() {
     if (g_vulkanContext) {
         g_vulkanContext->Shutdown();
         g_vulkanContext.reset();
     }
+}
+
+PFN_vkGetInstanceProcAddr GetVulkanInstanceProcAddr() {
+    if (g_vkFuncs.vkGetInstanceProcAddr) {
+        return g_vkFuncs.vkGetInstanceProcAddr;
+    }
+    return nullptr;
 }
 
 } // namespace WulfNet

@@ -69,20 +69,49 @@ static bool LoadBufferFunctions() {
 
     VkInstance instance = GetVulkanContext().GetInstance();
 
-    // Get vkGetInstanceProcAddr
-    extern PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr_External;
+    // Get vkGetInstanceProcAddr from VulkanContext
+    auto getProc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetVulkanInstanceProcAddr());
+
+    // Fall back to externally loaded one if VulkanContext doesn't have it
+    if (!getProc) {
+        extern PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr_External;
+        getProc = vkGetInstanceProcAddr_External;
+    }
+
+    if (!getProc) {
+        WULFNET_ERROR("Compute", "Cannot get vkGetInstanceProcAddr for buffer functions");
+        return false;
+    }
 
     #define LOAD_VK_FUNC(name) \
-        name = reinterpret_cast<PFN_##name>( \
-            vkGetInstanceProcAddr_External(instance, #name)); \
+        name = reinterpret_cast<PFN_##name>(getProc(instance, #name)); \
         if (!name) { \
             WULFNET_ERROR("Compute", "Failed to load " #name); \
             return false; \
         }
 
-    // Note: vkGetInstanceProcAddr is stored in VulkanContext.cpp
-    // For now, we'll use a simplified approach
+    LOAD_VK_FUNC(vkCreateBuffer);
+    LOAD_VK_FUNC(vkDestroyBuffer);
+    LOAD_VK_FUNC(vkGetBufferMemoryRequirements);
+    LOAD_VK_FUNC(vkAllocateMemory);
+    LOAD_VK_FUNC(vkFreeMemory);
+    LOAD_VK_FUNC(vkBindBufferMemory);
+    LOAD_VK_FUNC(vkMapMemory);
+    LOAD_VK_FUNC(vkUnmapMemory);
+    LOAD_VK_FUNC(vkFlushMappedMemoryRanges);
+    LOAD_VK_FUNC(vkInvalidateMappedMemoryRanges);
+    LOAD_VK_FUNC(vkCmdCopyBuffer);
+    LOAD_VK_FUNC(vkCmdFillBuffer);
+    vkGetPhysicalDeviceMemoryProperties_Local = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+        getProc(instance, "vkGetPhysicalDeviceMemoryProperties"));
+    if (!vkGetPhysicalDeviceMemoryProperties_Local) {
+        WULFNET_ERROR("Compute", "Failed to load vkGetPhysicalDeviceMemoryProperties");
+        return false;
+    }
 
+    #undef LOAD_VK_FUNC
+
+    WULFNET_INFO("Compute", "Buffer Vulkan functions loaded successfully");
     s_bufferFunctionsLoaded = true;
     return true;
 }
@@ -161,6 +190,12 @@ ComputeBuffer<T>& ComputeBuffer<T>::operator=(ComputeBuffer&& other) noexcept {
 template<typename T>
 bool ComputeBuffer<T>::Allocate(size_t count, GPUBufferUsage usage, GPUMemoryLocation location) {
     WULFNET_ZONE();
+
+    // Ensure Vulkan buffer functions are loaded
+    if (!LoadBufferFunctions()) {
+        WULFNET_ERROR("Compute", "Failed to load Vulkan buffer functions");
+        return false;
+    }
 
     if (count == 0) {
         WULFNET_WARNING("Compute", "Attempted to allocate zero-size buffer");

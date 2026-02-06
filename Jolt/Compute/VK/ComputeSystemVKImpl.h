@@ -22,6 +22,12 @@ public:
 	/// Initialize the compute system
 	bool							Initialize(ComputeSystemResult &outResult);
 
+	/// Access to the Vulkan instance (for WulfNet fluid compute integration)
+	VkInstance						GetInstance() const																{ return mInstance; }
+
+	/// Access to the graphics queue (for WulfNet fluid compute integration)
+	VkQueue							GetGraphicsQueue() const														{ return mGraphicsQueue; }
+
 protected:
 	/// Override to perform actions once the instance has been created
 	virtual void					OnInstanceCreated()																{ /* Do nothing */ }

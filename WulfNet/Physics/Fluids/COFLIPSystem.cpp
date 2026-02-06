@@ -6,6 +6,11 @@
 #include "COFLIPSystem.h"
 #include "WulfNet/Compute/Fluids/VulkanFluidCompute.h"
 #include "WulfNet/Compute/Vulkan/VulkanContext.h"
+
+// Jolt includes - Jolt.h must be included first
+#include <Jolt/Jolt.h>
+#include <Jolt/Compute/ComputeSystem.h>
+
 #include <cmath>
 #include <algorithm>
 #include <random>
@@ -74,6 +79,61 @@ bool COFLIPSystem::Initialize(const COFLIPConfig& config, VulkanContext* vulkan)
     if (m_gpuEnabled && vulkan && vulkan->IsValid()) {
         m_gpuCompute = std::make_unique<VulkanFluidCompute>();
         if (m_gpuCompute->Initialize(vulkan, config)) {
+            // Upload initial grid state
+            m_gpuCompute->UploadGrid(m_grid);
+        } else {
+            // GPU init failed, fall back to CPU
+            m_gpuCompute.reset();
+            m_gpuEnabled = false;
+        }
+    } else {
+        m_gpuEnabled = false;
+    }
+
+    m_initialized = true;
+    return true;
+}
+
+bool COFLIPSystem::InitializeFromJolt(const COFLIPConfig& config, ::JPH::ComputeSystem* joltCompute) {
+    if (m_initialized) {
+        return false;
+    }
+
+    m_config = config;
+    m_vulkanContext = nullptr;  // Not using WulfNet VulkanContext
+    m_gpuEnabled = (joltCompute != nullptr) && config.useGPU;
+
+    // Allocate grid
+    m_gridTotalCells = config.gridSizeX * config.gridSizeY * config.gridSizeZ;
+    m_grid.resize(m_gridTotalCells);
+    m_solidCells.resize(m_gridTotalCells, false);
+
+    // Previous velocity storage for FLIP
+    m_prevU.resize(m_gridTotalCells, 0.0f);
+    m_prevV.resize(m_gridTotalCells, 0.0f);
+    m_prevW.resize(m_gridTotalCells, 0.0f);
+
+    // Reserve particles
+    m_particles.reserve(config.gridSizeX * config.gridSizeY * config.gridSizeZ * config.particlesPerCell);
+
+    // Mark boundary cells as solid
+    for (uint32_t k = 0; k < config.gridSizeZ; ++k) {
+        for (uint32_t j = 0; j < config.gridSizeY; ++j) {
+            for (uint32_t i = 0; i < config.gridSizeX; ++i) {
+                if (i == 0 || i == config.gridSizeX - 1 ||
+                    j == 0 || // Only bottom boundary (let top be open)
+                    k == 0 || k == config.gridSizeZ - 1) {
+                    m_solidCells[GridIndex(i, j, k)] = true;
+                    m_grid[GridIndex(i, j, k)].type = 2; // Solid
+                }
+            }
+        }
+    }
+
+    // Initialize GPU via Jolt compute system
+    if (m_gpuEnabled && joltCompute) {
+        m_gpuCompute = std::make_unique<VulkanFluidCompute>();
+        if (m_gpuCompute->InitializeFromJolt(joltCompute, config)) {
             // Upload initial grid state
             m_gpuCompute->UploadGrid(m_grid);
         } else {
@@ -348,6 +408,19 @@ void COFLIPSystem::AddSolidSphere(float cx, float cy, float cz, float radius) {
 // B-Spline Basis Functions (for high-order interpolation)
 // =============================================================================
 
+// Quadratic B-spline (faster than cubic, 3x3x3=27 vs 4x4x4=64 samples)
+// Centered at 0, support [-1.5, 1.5]
+inline float QuadraticBSpline(float x) {
+    float ax = std::abs(x);
+    if (ax < 0.5f) {
+        return 0.75f - ax * ax;
+    } else if (ax < 1.5f) {
+        float t = 1.5f - ax;
+        return 0.5f * t * t;
+    }
+    return 0.0f;
+}
+
 float COFLIPSystem::BSpline(float x) const {
     // Cubic B-spline (centered at 0, support [-2, 2])
     float ax = std::abs(x);
@@ -464,6 +537,78 @@ void COFLIPSystem::InterpolateDivergenceFree(float x, float y, float z, float& v
                 int i = i0 + di, j = j0 + dj, k = k0 + dk;
                 if (InBounds(i, j, k)) {
                     float w = BSpline(wxg - i) * BSpline(wyg - j) * BSpline(wzg - k);
+                    vz += w * m_grid[GridIndex(i, j, k)].w;
+                    totalWeightW += w;
+                }
+            }
+        }
+    }
+
+    // Normalize
+    if (totalWeightU > 0) vx /= totalWeightU;
+    if (totalWeightV > 0) vy /= totalWeightV;
+    if (totalWeightW > 0) vz /= totalWeightW;
+}
+
+// Optimized version using quadratic B-spline (27 vs 64 samples)
+void COFLIPSystem::InterpolateDivergenceFreeQuadratic(float x, float y, float z, float& vx, float& vy, float& vz) const {
+    // Convert to grid coordinates
+    float gx, gy, gz;
+    WorldToGrid(x, y, z, gx, gy, gz);
+
+    vx = 0; vy = 0; vz = 0;
+    float totalWeightU = 0, totalWeightV = 0, totalWeightW = 0;
+
+    // Interpolate u (at face centers offset by 0.5 in x)
+    float ux = gx - 0.5f, uy = gy, uz = gz;
+    int i0 = static_cast<int>(std::floor(ux + 0.5f)) - 1;
+    int j0 = static_cast<int>(std::floor(uy + 0.5f)) - 1;
+    int k0 = static_cast<int>(std::floor(uz + 0.5f)) - 1;
+
+    for (int dk = 0; dk < 3; ++dk) {
+        for (int dj = 0; dj < 3; ++dj) {
+            for (int di = 0; di < 3; ++di) {
+                int i = i0 + di, j = j0 + dj, k = k0 + dk;
+                if (InBounds(i, j, k)) {
+                    float w = QuadraticBSpline(ux - i) * QuadraticBSpline(uy - j) * QuadraticBSpline(uz - k);
+                    vx += w * m_grid[GridIndex(i, j, k)].u;
+                    totalWeightU += w;
+                }
+            }
+        }
+    }
+
+    // Interpolate v (at face centers offset by 0.5 in y)
+    float vxg = gx, vyg = gy - 0.5f, vzg = gz;
+    i0 = static_cast<int>(std::floor(vxg + 0.5f)) - 1;
+    j0 = static_cast<int>(std::floor(vyg + 0.5f)) - 1;
+    k0 = static_cast<int>(std::floor(vzg + 0.5f)) - 1;
+
+    for (int dk = 0; dk < 3; ++dk) {
+        for (int dj = 0; dj < 3; ++dj) {
+            for (int di = 0; di < 3; ++di) {
+                int i = i0 + di, j = j0 + dj, k = k0 + dk;
+                if (InBounds(i, j, k)) {
+                    float w = QuadraticBSpline(vxg - i) * QuadraticBSpline(vyg - j) * QuadraticBSpline(vzg - k);
+                    vy += w * m_grid[GridIndex(i, j, k)].v;
+                    totalWeightV += w;
+                }
+            }
+        }
+    }
+
+    // Interpolate w (at face centers offset by 0.5 in z)
+    float wxg = gx, wyg = gy, wzg = gz - 0.5f;
+    i0 = static_cast<int>(std::floor(wxg + 0.5f)) - 1;
+    j0 = static_cast<int>(std::floor(wyg + 0.5f)) - 1;
+    k0 = static_cast<int>(std::floor(wzg + 0.5f)) - 1;
+
+    for (int dk = 0; dk < 3; ++dk) {
+        for (int dj = 0; dj < 3; ++dj) {
+            for (int di = 0; di < 3; ++di) {
+                int i = i0 + di, j = j0 + dj, k = k0 + dk;
+                if (InBounds(i, j, k)) {
+                    float w = QuadraticBSpline(wxg - i) * QuadraticBSpline(wyg - j) * QuadraticBSpline(wzg - k);
                     vz += w * m_grid[GridIndex(i, j, k)].w;
                     totalWeightW += w;
                 }

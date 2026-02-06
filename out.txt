@@ -1,0 +1,93 @@
+[32m[20:29:26.244] [ INFO] [Compute] Initializing Vulkan compute context from external handles...[0m
+[32m[20:29:26.244] [ INFO] [Compute] Vulkan library loaded successfully[0m
+[32m[20:29:26.244] [ INFO] [Compute] Vulkan compute context initialized from external handles[0m
+[32m[20:29:26.244] [ INFO] [Compute]   GPU: NVIDIA GeForce RTX 2080 Ti[0m
+[32m[20:29:26.244] [ INFO] [Compute]   Memory: 11027 MB[0m
+[FluidCompute]   VulkanContext initialized from Jolt handles
+[FluidCompute] VulkanFluidCompute: Initializing GPU compute (Jolt integration)
+[FluidCompute]   Grid: 48x32x48 = 73728 cells
+[FluidCompute]   Max particles: 589824
+[32m[20:29:26.250] [ INFO] [Compute] Buffer Vulkan functions loaded successfully[0m
+[FluidCompute]   Particle buffer: 36 MB
+[FluidCompute]   Grid buffer: 3 MB
+[FluidCompute]   Prev velocity buffer: 0 MB
+[FluidCompute]   Sorting buffers: 46 MB total
+[FluidCompute]   Loaded shader: coflip_p2g
+[FluidCompute]   Loaded shader: coflip_normalize
+[FluidCompute]   Loaded shader: coflip_forces
+[FluidCompute]   Loaded shader: coflip_divergence
+[FluidCompute]   Loaded shader: coflip_pressure
+[FluidCompute]   Loaded shader: coflip_gradient
+[FluidCompute]   Loaded shader: coflip_g2p
+[FluidCompute]   Loaded optional shader: coflip_cell_index
+[FluidCompute]   Loaded optional shader: coflip_radix_sort
+[FluidCompute]   Loaded optional shader: coflip_reorder
+[FluidCompute]   Particle sorting enabled
+[FluidCompute] VulkanFluidCompute: GPU compute ready (Jolt integration)
+[FluidCompute] VulkanFluidCompute: Shutting down
+[33m[20:29:36.515] [ WARN] [Compute] VulkanContext already initialized[0m
+[FluidCompute]   VulkanContext initialized from Jolt handles
+[FluidCompute] VulkanFluidCompute: Initializing GPU compute (Jolt integration)
+[FluidCompute]   Grid: 48x32x48 = 73728 cells
+[FluidCompute]   Max particles: 589824
+[FluidCompute]   Particle buffer: 36 MB
+[FluidCompute]   Grid buffer: 3 MB
+[FluidCompute]   Prev velocity buffer: 0 MB
+[FluidCompute]   Sorting buffers: 46 MB total
+[FluidCompute]   Loaded shader: coflip_p2g
+[FluidCompute]   Loaded shader: coflip_normalize
+[FluidCompute]   Loaded shader: coflip_forces
+[FluidCompute]   Loaded shader: coflip_divergence
+[FluidCompute]   Loaded shader: coflip_pressure
+[FluidCompute]   Loaded shader: coflip_gradient
+[FluidCompute]   Loaded shader: coflip_g2p
+[FluidCompute]   Loaded optional shader: coflip_cell_index
+[FluidCompute]   Loaded optional shader: coflip_radix_sort
+[FluidCompute]   Loaded optional shader: coflip_reorder
+[FluidCompute]   Particle sorting enabled
+[FluidCompute] VulkanFluidCompute: GPU compute ready (Jolt integration)
+[FluidCompute] VulkanFluidCompute: Shutting down
+[33m[20:29:46.830] [ WARN] [Compute] VulkanContext already initialized[0m
+[FluidCompute]   VulkanContext initialized from Jolt handles
+[FluidCompute] VulkanFluidCompute: Initializing GPU compute (Jolt integration)
+[FluidCompute]   Grid: 48x32x48 = 73728 cells
+[FluidCompute]   Max particles: 589824
+[FluidCompute]   Particle buffer: 36 MB
+[FluidCompute]   Grid buffer: 3 MB
+[FluidCompute]   Prev velocity buffer: 0 MB
+[FluidCompute]   Sorting buffers: 46 MB total
+[FluidCompute]   Loaded shader: coflip_p2g
+[FluidCompute]   Loaded shader: coflip_normalize
+[FluidCompute]   Loaded shader: coflip_forces
+[FluidCompute]   Loaded shader: coflip_divergence
+[FluidCompute]   Loaded shader: coflip_pressure
+[FluidCompute]   Loaded shader: coflip_gradient
+[FluidCompute]   Loaded shader: coflip_g2p
+[FluidCompute]   Loaded optional shader: coflip_cell_index
+[FluidCompute]   Loaded optional shader: coflip_radix_sort
+[FluidCompute]   Loaded optional shader: coflip_reorder
+[FluidCompute]   Particle sorting enabled
+[FluidCompute] VulkanFluidCompute: GPU compute ready (Jolt integration)
+[FluidCompute] VulkanFluidCompute: Shutting down
+[33m[20:29:56.912] [ WARN] [Compute] VulkanContext already initialized[0m
+[FluidCompute]   VulkanContext initialized from Jolt handles
+[FluidCompute] VulkanFluidCompute: Initializing GPU compute (Jolt integration)
+[FluidCompute]   Grid: 48x32x48 = 73728 cells
+[FluidCompute]   Max particles: 589824
+[FluidCompute]   Particle buffer: 36 MB
+[FluidCompute]   Grid buffer: 3 MB
+[FluidCompute]   Prev velocity buffer: 0 MB
+[FluidCompute]   Sorting buffers: 46 MB total
+[FluidCompute]   Loaded shader: coflip_p2g
+[FluidCompute]   Loaded shader: coflip_normalize
+[FluidCompute]   Loaded shader: coflip_forces
+[FluidCompute]   Loaded shader: coflip_divergence
+[FluidCompute]   Loaded shader: coflip_pressure
+[FluidCompute]   Loaded shader: coflip_gradient
+[FluidCompute]   Loaded shader: coflip_g2p
+[FluidCompute]   Loaded optional shader: coflip_cell_index
+[FluidCompute]   Loaded optional shader: coflip_radix_sort
+[FluidCompute]   Loaded optional shader: coflip_reorder
+[FluidCompute]   Particle sorting enabled
+[FluidCompute] VulkanFluidCompute: GPU compute ready (Jolt integration)
+[FluidCompute] VulkanFluidCompute: Shutting down

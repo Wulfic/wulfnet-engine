@@ -10,7 +10,7 @@
 #include <WulfNet/Physics/Fluids/FluidParticle.h>
 #include <WulfNet/Physics/Fluids/FluidGrid.h>
 #include <WulfNet/Compute/Fluids/VulkanFluidCompute.h>
-#include <WulfNet/Compute/Fluids/COFLIPSystem.h>
+#include <WulfNet/Physics/Fluids/COFLIPSystem.h>
 
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>

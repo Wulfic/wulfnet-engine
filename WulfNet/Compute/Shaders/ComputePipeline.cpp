@@ -59,9 +59,26 @@ static bool LoadPipelineFunctions() {
 
     VkInstance instance = GetVulkanContext().GetInstance();
 
+    // Get vkGetInstanceProcAddr from VulkanContext first
+    auto getProc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetVulkanInstanceProcAddr());
+
+    // Update the external pointer so other code can use it too
+    if (getProc && !vkGetInstanceProcAddr_External) {
+        vkGetInstanceProcAddr_External = getProc;
+    }
+
+    // Fall back to external if VulkanContext doesn't have it
+    if (!getProc) {
+        getProc = vkGetInstanceProcAddr_External;
+    }
+
+    if (!getProc) {
+        WULFNET_ERROR("Compute", "Cannot get vkGetInstanceProcAddr for pipeline functions");
+        return false;
+    }
+
     #define LOAD_VK_FUNC(name) \
-        s_##name = reinterpret_cast<PFN_##name>( \
-            vkGetInstanceProcAddr_External(instance, #name))
+        s_##name = reinterpret_cast<PFN_##name>(getProc(instance, #name))
 
     LOAD_VK_FUNC(vkCreateShaderModule);
     LOAD_VK_FUNC(vkDestroyShaderModule);

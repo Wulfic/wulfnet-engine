@@ -14,6 +14,12 @@
 #include <memory>
 #include <string>
 
+// Forward declarations for Jolt types
+namespace JPH {
+    class ComputeSystem;
+    class ComputeSystemVK;
+}
+
 namespace WulfNet {
 
 // =============================================================================
@@ -62,13 +68,22 @@ public:
     // Initialization
     // ==========================================================================
 
-    /// Initialize GPU compute resources
+    /// Initialize GPU compute resources using WulfNet's VulkanContext
     /// @param vulkan Vulkan context for GPU operations
     /// @param config CO-FLIP configuration for buffer sizing
     /// @param shaderPath Path to compiled SPIR-V shaders
     /// @return true if successful
     bool Initialize(VulkanContext* vulkan, const COFLIPConfig& config,
                     const std::string& shaderPath = "Assets/Shaders/Compute");
+
+    /// Initialize GPU compute resources using Jolt's compute system
+    /// This allows integration with the Samples app renderer
+    /// @param joltCompute Jolt's ComputeSystem (must be ComputeSystemVK-based)
+    /// @param config CO-FLIP configuration for buffer sizing
+    /// @param shaderPath Path to compiled SPIR-V shaders
+    /// @return true if successful
+    bool InitializeFromJolt(::JPH::ComputeSystem* joltCompute, const COFLIPConfig& config,
+                            const std::string& shaderPath = "Assets/Shaders/Compute");
 
     /// Release all GPU resources
     void Shutdown();
@@ -173,6 +188,14 @@ private:
 
     bool m_initialized = false;
     VulkanContext* m_vulkan = nullptr;
+    ::JPH::ComputeSystemVK* m_joltCompute = nullptr;  // Alternative: Jolt compute system
+
+    // Vulkan objects (cached from either WulfNet or Jolt context)
+    VkInstance m_vkInstance = VK_NULL_HANDLE;
+    VkPhysicalDevice m_vkPhysicalDevice = VK_NULL_HANDLE;
+    VkDevice m_vkDevice = VK_NULL_HANDLE;
+    VkQueue m_vkComputeQueue = VK_NULL_HANDLE;
+    uint32_t m_vkComputeQueueFamily = 0;
 
     // Async compute state
     bool m_asyncInProgress = false;

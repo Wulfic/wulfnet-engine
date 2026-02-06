@@ -10,6 +10,11 @@
 #include <memory>
 #include <functional>
 
+// Forward declaration for Jolt compute system (must be before WulfNet namespace)
+namespace JPH {
+    class ComputeSystem;
+}
+
 namespace WulfNet {
 
 // Forward declarations
@@ -135,13 +140,18 @@ struct GPUBufferHandle {
 // =============================================================================
 // CO-FLIP System - Main fluid simulation class
 // =============================================================================
+
 class COFLIPSystem {
 public:
     COFLIPSystem();
     ~COFLIPSystem();
 
-    // Initialization
+    // Initialization (WulfNet VulkanContext path)
     bool Initialize(const COFLIPConfig& config, VulkanContext* vulkan = nullptr);
+
+    // Initialization (Jolt ComputeSystem path - for Samples app integration)
+    bool InitializeFromJolt(const COFLIPConfig& config, ::JPH::ComputeSystem* joltCompute);
+
     void Shutdown();
     bool IsInitialized() const { return m_initialized; }
 
@@ -193,6 +203,7 @@ private:
 
     // Divergence-free interpolation (key CO-FLIP innovation)
     void InterpolateDivergenceFree(float x, float y, float z, float& vx, float& vy, float& vz) const;
+    void InterpolateDivergenceFreeQuadratic(float x, float y, float z, float& vx, float& vy, float& vz) const;
     void InterpolateVelocityGradient(float x, float y, float z, float grad[9]) const;
 
     // B-spline basis functions for high-order interpolation
