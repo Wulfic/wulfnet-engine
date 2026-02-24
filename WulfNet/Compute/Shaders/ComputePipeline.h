@@ -59,10 +59,24 @@ struct PushConstantRange {
 // Compute Pipeline Description
 // =============================================================================
 
+// =============================================================================
+// Specialization Constants
+// =============================================================================
+
+struct SpecializationConstant {
+    uint32_t constantID;    // Matches layout(constant_id = N) in GLSL
+    uint32_t value;         // Integer value (also works for bool as 0/1)
+};
+
+// =============================================================================
+// Compute Pipeline Description
+// =============================================================================
+
 struct ComputePipelineDesc {
     std::vector<uint32_t> spirvCode;            // SPIR-V bytecode
     std::vector<ShaderBinding> bindings;         // Descriptor bindings
     PushConstantRange pushConstants;             // Push constant range
+    std::vector<SpecializationConstant> specializationConstants; // Specialization constants
     std::string entryPoint = "main";             // Shader entry point
     uint32_t localSizeX = 256;                   // Workgroup size X (for validation)
     uint32_t localSizeY = 1;                     // Workgroup size Y
@@ -168,7 +182,8 @@ private:
     bool CreateShaderModule(const std::vector<uint32_t>& spirvCode);
     bool CreateDescriptorSetLayout(const std::vector<ShaderBinding>& bindings);
     bool CreatePipelineLayout(const PushConstantRange& pushConstants);
-    bool CreatePipeline(const std::string& entryPoint);
+    bool CreatePipeline(const std::string& entryPoint,
+                        const std::vector<SpecializationConstant>& specConstants = {});
     bool AllocateDescriptorSet();
 
     VkShaderModule m_shaderModule = nullptr;

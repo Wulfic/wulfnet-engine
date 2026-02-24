@@ -46,6 +46,9 @@
 // Compute pipelines
 #include "Shaders/ComputePipeline.h"
 
+// Parallel reduction
+#include "Reduction/ParallelReduction.h"
+
 namespace WulfNet {
 
 /// Check if GPU compute is available on this system

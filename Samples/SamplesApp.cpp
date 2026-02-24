@@ -54,6 +54,7 @@
 #include <Utils/ReadData.h>
 #include <Renderer/DebugRendererImp.h>
 #include <Tests/WulfNet/WulfNetFluidTest.h>
+#include <Tests/WulfNet/WulfNetPhysicsTests.h>
 
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #include <fstream>
@@ -450,6 +451,12 @@ JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetBuoyancyTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRagdollSwimTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetClothWaterTest)
 
+// WulfNet Physics Integration Tests
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetIFSFractalTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetSmokeTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetOcclusionTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFallingFractalTest)
+
 static TestNameAndRTTI sWulfNetTests[] =
 {
 	{ "River (MPM)",						JPH_RTTI(WulfNetRiverTest) },
@@ -460,6 +467,10 @@ static TestNameAndRTTI sWulfNetTests[] =
 	{ "Buoyancy (Float/Sink)",				JPH_RTTI(WulfNetBuoyancyTest) },
 	{ "Ragdoll Swimming",					JPH_RTTI(WulfNetRagdollSwimTest) },
 	{ "Cloth in Water",						JPH_RTTI(WulfNetClothWaterTest) },
+	{ "IFS Fractal (GPU Morphing)",			JPH_RTTI(WulfNetIFSFractalTest) },
+	{ "Smoke & Fire",						JPH_RTTI(WulfNetSmokeTest) },
+	{ "Occlusion Culling (CPU)",			JPH_RTTI(WulfNetOcclusionTest) },
+	{ "Falling Bodies + Fractal",			JPH_RTTI(WulfNetFallingFractalTest) },
 };
 
 static TestCategory sAllCategories[] =

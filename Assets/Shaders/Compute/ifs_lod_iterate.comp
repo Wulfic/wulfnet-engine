@@ -1,0 +1,36 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - IFS LOD Iteration
+// =============================================================================
+// Expands LOD points: for each input point, applies all transforms
+// and writes transformCount new points.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    vec4 inputData[];
+};
+
+layout(std430, binding = 1) writeonly buffer OutputBuffer {
+    vec4 outputData[];
+};
+
+layout(std430, binding = 2) readonly buffer TransformBuffer {
+    mat4 transforms[];
+};
+
+layout(push_constant) uniform PushConstants {
+    int transformCount;
+};
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    vec3 seed = inputData[id].xyz;
+
+    int outputIndex = int(id) * transformCount;
+    for (int i = 0; i < transformCount; ++i) {
+        outputData[outputIndex + i] = transforms[i] * vec4(seed, 1.0);
+    }
+}

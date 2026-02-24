@@ -206,7 +206,7 @@ bool ComputePipeline::Create(const ComputePipelineDesc& desc) {
         return false;
     }
 
-    if (!CreatePipeline(desc.entryPoint)) {
+    if (!CreatePipeline(desc.entryPoint, desc.specializationConstants)) {
         WULFNET_ERROR("Compute", "Failed to create compute pipeline for '" + m_name + "'");
         Destroy();
         return false;
@@ -501,12 +501,38 @@ bool ComputePipeline::CreatePipelineLayout(const PushConstantRange& pushConstant
     return true;
 }
 
-bool ComputePipeline::CreatePipeline(const std::string& entryPoint) {
+bool ComputePipeline::CreatePipeline(const std::string& entryPoint,
+                                     const std::vector<SpecializationConstant>& specConstants) {
+    // Build specialization info if constants are provided
+    std::vector<VkSpecializationMapEntry> mapEntries;
+    std::vector<uint32_t> specData;
+    VkSpecializationInfo specInfo = {};
+
+    if (!specConstants.empty()) {
+        mapEntries.reserve(specConstants.size());
+        specData.reserve(specConstants.size());
+
+        for (size_t i = 0; i < specConstants.size(); i++) {
+            VkSpecializationMapEntry entry = {};
+            entry.constantID = specConstants[i].constantID;
+            entry.offset = static_cast<uint32_t>(i * sizeof(uint32_t));
+            entry.size = sizeof(uint32_t);
+            mapEntries.push_back(entry);
+            specData.push_back(specConstants[i].value);
+        }
+
+        specInfo.mapEntryCount = static_cast<uint32_t>(mapEntries.size());
+        specInfo.pMapEntries = mapEntries.data();
+        specInfo.dataSize = specData.size() * sizeof(uint32_t);
+        specInfo.pData = specData.data();
+    }
+
     VkPipelineShaderStageCreateInfo stageInfo = {};
     stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     stageInfo.module = m_shaderModule;
     stageInfo.pName = entryPoint.c_str();
+    stageInfo.pSpecializationInfo = specConstants.empty() ? nullptr : &specInfo;
 
     VkComputePipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;

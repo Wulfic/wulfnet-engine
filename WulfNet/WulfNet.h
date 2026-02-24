@@ -33,6 +33,25 @@
 #include "Compute/Compute.h"
 
 // =============================================================================
+// Procedural Systems
+// =============================================================================
+
+#include "Procedural/IFS/AffineTransform.h"
+#include "Procedural/IFS/TransformPresets.h"
+#include "Procedural/IFS/TransformBlender.h"
+#include "Procedural/IFS/IFSSystem.h"
+
+// =============================================================================
+// Rendering Systems
+// =============================================================================
+
+#include "Rendering/SoftwareRasterizer/SoftRasterTypes.h"
+#include "Rendering/SoftwareRasterizer/GBuffer.h"
+#include "Rendering/SoftwareRasterizer/SoftwareRasterizer.h"
+#include "Rendering/SoftwareRasterizer/DeferredShading.h"
+#include "Rendering/SoftwareRasterizer/OcclusionCuller.h"
+
+// =============================================================================
 // Namespace Alias
 // =============================================================================
 

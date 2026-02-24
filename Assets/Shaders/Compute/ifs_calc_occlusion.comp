@@ -1,0 +1,61 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - IFS Ambient Occlusion (3x3x3 neighbor counting)
+// =============================================================================
+// For each voxel, counts occupied neighbors in a 3x3x3 neighborhood
+// and writes (1 - occupancy_ratio) as an ambient occlusion value.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) readonly buffer VoxelGrid {
+    int voxels[];
+};
+
+layout(std430, binding = 1) buffer OcclusionGrid {
+    float occlusion[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint gridSize;
+    uint memoryOffset;
+};
+
+uint to1D(ivec3 pos) {
+    return uint(pos.x) + uint(pos.y) * gridSize + uint(pos.z) * gridSize * gridSize;
+}
+
+ivec3 to3D(uint idx) {
+    int gs = int(gridSize);
+    int x = int(idx) % gs;
+    int y = (int(idx) / gs) % gs;
+    int z = int(idx) / (gs * gs);
+    return ivec3(x, y, z);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    ivec3 pos = to3D(id + memoryOffset);
+    int gs = int(gridSize);
+
+    int neighborCount = 0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                if (x == 0 && y == 0 && z == 0) continue;
+
+                ivec3 neighbor = pos - ivec3(x, y, z);
+                // Bounds check
+                if (neighbor.x >= 0 && neighbor.x < gs &&
+                    neighbor.y >= 0 && neighbor.y < gs &&
+                    neighbor.z >= 0 && neighbor.z < gs) {
+                    neighborCount += voxels[to1D(neighbor)];
+                }
+            }
+        }
+    }
+
+    float occ = float(neighborCount) / 27.0;
+    occlusion[id + memoryOffset] = 1.0 - occ;
+}

@@ -1,0 +1,29 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - IFS Particle Initialization
+// =============================================================================
+// Initializes particles in a uniform cube grid.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer ParticleBuffer {
+    vec4 particles[];  // xyz = position, w unused
+};
+
+layout(push_constant) uniform PushConstants {
+    uint cubeResolution;
+    float cubeSize;
+};
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+
+    uint x = id % cubeResolution;
+    uint y = (id / cubeResolution) % cubeResolution;
+    uint z = id / (cubeResolution * cubeResolution);
+
+    vec3 pos = vec3(float(x), float(y), float(z)) * cubeSize;
+    particles[id] = vec4(pos, 0.0);
+}

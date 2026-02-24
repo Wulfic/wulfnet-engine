@@ -1,0 +1,46 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - Bounds to Transform Shader
+// =============================================================================
+// Reads min/max/centroid from reduction output and produces a scale+translate
+// matrix that frames the fractal within a target bounds size.
+// =============================================================================
+
+layout(local_size_x = 1) in;
+
+layout(std430, binding = 0) readonly buffer BoundsBuffer {
+    vec4 boundsData[];  // [0]=min, [1]=max, [2]=sum (centroid accumulator)
+};
+
+layout(std430, binding = 1) writeonly buffer TransformBuffer {
+    mat4 finalTransform;
+};
+
+layout(push_constant) uniform PushConstants {
+    float targetBoundsSize;
+    float scalePadding;
+    float particleCount;
+};
+
+void main() {
+    vec3 minPos = boundsData[0].xyz;
+    vec3 maxPos = boundsData[1].xyz;
+    vec3 midPos = boundsData[2].xyz / particleCount;
+
+    float boundsExtent = max(distance(minPos, midPos), distance(maxPos, midPos));
+
+    float rescale = targetBoundsSize / max(boundsExtent, 0.0001);
+    rescale *= scalePadding;
+
+    vec3 scaledMid = midPos * rescale;
+
+    // Row-major matrix stored as mat4
+    // Applies uniform scale and centers on centroid
+    finalTransform = mat4(
+        rescale,     0.0,         0.0,         0.0,
+        0.0,         rescale,     0.0,         0.0,
+        0.0,         0.0,         rescale,     0.0,
+        -scaledMid.x, -scaledMid.y, -scaledMid.z, 1.0
+    );
+}

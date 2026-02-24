@@ -1,0 +1,64 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - IFS Voxelize Positions
+// =============================================================================
+// Maps particle positions into a 3D voxel grid after applying the
+// bounds-framing final transform.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    vec4 particles[];
+};
+
+layout(std430, binding = 1) readonly buffer TransformBuffer {
+    mat4 transforms[];
+};
+
+layout(std430, binding = 2) readonly buffer FinalTransformBuffer {
+    mat4 finalTransform;
+};
+
+layout(std430, binding = 3) buffer VoxelGrid {
+    int voxels[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint gridSize;
+    uint gridBounds;
+    uint transformCount;
+    int particleCount;
+};
+
+uint to1D(uvec3 pos) {
+    return pos.x + pos.y * gridSize + pos.z * gridSize * gridSize;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= uint(particleCount)) return;
+
+    vec3 pos = particles[id].xyz;
+
+    // Apply final framing transform and map to grid coordinates
+    vec3 centralPos = (finalTransform * vec4(pos, 1.0)).xyz;
+    centralPos += float(gridBounds) / 2.0;
+    centralPos /= float(gridBounds);
+    centralPos *= float(gridSize);
+
+    uvec3 voxelPos = uvec3(clamp(centralPos, vec3(0.0), vec3(float(gridSize - 1u))));
+    voxels[to1D(voxelPos)] = 1;
+
+    // Also voxelize one-step-ahead predictions
+    for (uint i = 0u; i < transformCount; ++i) {
+        vec3 nextPos = (finalTransform * (transforms[i] * vec4(pos, 1.0))).xyz;
+        nextPos += float(gridBounds) / 2.0;
+        nextPos /= float(gridBounds);
+        nextPos *= float(gridSize);
+
+        uvec3 nextVoxel = uvec3(clamp(nextPos, vec3(0.0), vec3(float(gridSize - 1u))));
+        voxels[to1D(nextVoxel)] = 1;
+    }
+}

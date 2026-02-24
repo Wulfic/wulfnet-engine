@@ -1,0 +1,19 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - Clear Occlusion Grid
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer OcclusionGrid {
+    float occlusion[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint memoryOffset;
+};
+
+void main() {
+    occlusion[gl_GlobalInvocationID.x + memoryOffset] = 0.0;
+}

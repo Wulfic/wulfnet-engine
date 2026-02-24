@@ -35,6 +35,19 @@ set(WULFNET_SOURCES
     Compute/Memory/ComputeBuffer.cpp
     Compute/Shaders/ComputePipeline.cpp
     Compute/Fluids/VulkanFluidCompute.cpp
+    Compute/Reduction/ParallelReduction.cpp
+
+    # Procedural - IFS
+    Procedural/IFS/AffineTransform.cpp
+    Procedural/IFS/TransformPresets.cpp
+    Procedural/IFS/TransformBlender.cpp
+    Procedural/IFS/IFSSystem.cpp
+
+    # Rendering - Software Rasterizer
+    Rendering/SoftwareRasterizer/GBuffer.cpp
+    Rendering/SoftwareRasterizer/SoftwareRasterizer.cpp
+    Rendering/SoftwareRasterizer/DeferredShading.cpp
+    Rendering/SoftwareRasterizer/OcclusionCuller.cpp
 )
 
 set(WULFNET_HEADERS
@@ -64,6 +77,20 @@ set(WULFNET_HEADERS
     Compute/Memory/ComputeBuffer.h
     Compute/Shaders/ComputePipeline.h
     Compute/Fluids/VulkanFluidCompute.h
+    Compute/Reduction/ParallelReduction.h
+
+    # Procedural - IFS
+    Procedural/IFS/AffineTransform.h
+    Procedural/IFS/TransformPresets.h
+    Procedural/IFS/TransformBlender.h
+    Procedural/IFS/IFSSystem.h
+
+    # Rendering - Software Rasterizer
+    Rendering/SoftwareRasterizer/SoftRasterTypes.h
+    Rendering/SoftwareRasterizer/GBuffer.h
+    Rendering/SoftwareRasterizer/SoftwareRasterizer.h
+    Rendering/SoftwareRasterizer/DeferredShading.h
+    Rendering/SoftwareRasterizer/OcclusionCuller.h
 )
 
 # Create the WulfNet library
@@ -155,5 +182,52 @@ set_target_properties(WulfNet PROPERTIES FOLDER "WulfNet")
 
 # Source groups for IDE
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${WULFNET_SOURCES} ${WULFNET_HEADERS})
+
+# =============================================================================
+# Shader Compilation (GLSL -> SPIR-V)
+# =============================================================================
+
+find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+
+if(GLSLC)
+    set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Shaders/Compute")
+    set(SHADER_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Shaders/Compute")
+
+    set(COMP_SHADERS
+        reduce_global
+        reduce_final
+        reduce_to_transform
+        ifs_init_particles
+        ifs_chaos_game
+        ifs_iterated_expand
+        ifs_clear_voxels
+        ifs_voxelize
+        ifs_clear_occlusion
+        ifs_calc_occlusion
+        ifs_lod_first
+        ifs_lod_iterate
+    )
+
+    set(SPV_OUTPUTS "")
+    foreach(SHADER ${COMP_SHADERS})
+        set(INPUT_FILE "${SHADER_SOURCE_DIR}/${SHADER}.comp")
+        set(OUTPUT_FILE "${SHADER_OUTPUT_DIR}/${SHADER}.spv")
+
+        add_custom_command(
+            OUTPUT ${OUTPUT_FILE}
+            COMMAND ${GLSLC} -o ${OUTPUT_FILE} ${INPUT_FILE}
+            DEPENDS ${INPUT_FILE}
+            COMMENT "Compiling ${SHADER}.comp -> ${SHADER}.spv"
+        )
+
+        list(APPEND SPV_OUTPUTS ${OUTPUT_FILE})
+    endforeach()
+
+    add_custom_target(CompileShaders ALL DEPENDS ${SPV_OUTPUTS})
+    add_dependencies(WulfNet CompileShaders)
+    message(STATUS "  glslc found: Shader compilation enabled")
+else()
+    message(STATUS "  glslc not found: Shaders must be pre-compiled")
+endif()
 
 message(STATUS "WulfNet Engine library configured")

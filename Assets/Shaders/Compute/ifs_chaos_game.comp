@@ -1,0 +1,49 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - IFS Chaos Game
+// =============================================================================
+// Applies a randomly selected affine transform to each particle.
+// Uses Hugo Elias integer hash for random transform selection.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+// Row-major 4x4 matrices stored as flat float[16]
+layout(std430, binding = 0) buffer ParticleBuffer {
+    vec4 particles[];
+};
+
+layout(std430, binding = 1) readonly buffer TransformBuffer {
+    mat4 transforms[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint seed;
+    uint transformCount;
+    int batchIndex;
+    int particleCount;
+};
+
+float hash(uint n) {
+    // Integer hash from Hugo Elias
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 0x789221u) + 0x76312589u;
+    return float(n & 0x7fffffffu) / float(0x7fffffff);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= uint(particleCount)) return;
+
+    vec3 currentPos = particles[id].xyz;
+
+    uint s = (seed + uint(batchIndex) * 100000u) + id;
+    float rand = hash(s);
+    uint index = uint(floor(rand * float(transformCount)));
+
+    mat4 attractor = transforms[index];
+    vec4 newPosition = attractor * vec4(currentPos, 1.0);
+
+    particles[id] = vec4(newPosition.xyz, 0.0);
+}

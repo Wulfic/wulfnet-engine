@@ -1,0 +1,55 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - Global Parallel Reduction Shader
+// =============================================================================
+// Ported from ParallelReduce.compute (Unity IFS reference)
+// Uses Sequential Addressing (Reduction #3) - best general-purpose strategy
+// Specialization constant selects MIN/MAX/ADD operation at pipeline creation
+// =============================================================================
+
+layout(local_size_x = 128) in;
+
+// Reduction operation: 0 = MIN, 1 = MAX, 2 = ADD
+layout(constant_id = 0) const uint REDUCTION_OP = 0;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    vec4 inputData[];  // vec4 for alignment, only xyz used
+};
+
+layout(std430, binding = 1) writeonly buffer OutputBuffer {
+    vec4 outputData[];
+};
+
+shared vec3 gs_Reduce[128];
+
+vec3 reductionOp(vec3 v1, vec3 v2) {
+    if (REDUCTION_OP == 0u) return min(v1, v2);
+    if (REDUCTION_OP == 1u) return max(v1, v2);
+    return v1 + v2;  // ADD
+}
+
+void main() {
+    uint gtid = gl_LocalInvocationID.x;
+    uint gid = gl_WorkGroupID.x;
+    uint globalID = gl_GlobalInvocationID.x;
+
+    // Load from global memory into shared memory
+    gs_Reduce[gtid] = inputData[globalID].xyz;
+    barrier();
+    memoryBarrierShared();
+
+    // Sequential addressing reduction
+    for (uint s = 64u; s > 0u; s >>= 1u) {
+        if (gtid < s) {
+            gs_Reduce[gtid] = reductionOp(gs_Reduce[gtid], gs_Reduce[gtid + s]);
+        }
+        barrier();
+        memoryBarrierShared();
+    }
+
+    // Write result for this workgroup
+    if (gtid == 0u) {
+        outputData[gid] = vec4(gs_Reduce[0], 0.0);
+    }
+}

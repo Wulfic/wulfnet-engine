@@ -78,4 +78,70 @@ endif()
 
 set_target_properties(ComputeExample PROPERTIES FOLDER "WulfNet/Examples")
 
+# =============================================================================
+# IFSExample - GPU IFS Fractal demonstration
+# =============================================================================
+
+set(IFS_EXAMPLE_SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFSExample/main.cpp
+)
+
+add_executable(IFSExample ${IFS_EXAMPLE_SRC_FILES})
+target_link_libraries(IFSExample LINK_PUBLIC WulfNet Jolt)
+
+target_compile_features(IFSExample PUBLIC cxx_std_17)
+
+target_include_directories(IFSExample PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+if(MSVC)
+    target_compile_options(IFSExample PRIVATE
+        /WX-
+        /wd4820 /wd4514 /wd4625 /wd4626 /wd5026 /wd5027
+        /wd4464 /wd4100 /wd4365 /wd4061 /wd5219 /wd4668 /wd4530
+        /wd4710 /wd4711 /wd4743 /wd4191
+        /GL-
+    )
+    target_link_options(IFSExample PUBLIC
+        "/SUBSYSTEM:CONSOLE"
+        "/LTCG:OFF"
+    )
+endif()
+
+set_target_properties(IFSExample PROPERTIES FOLDER "WulfNet/Examples")
+
+# =============================================================================
+# SoftRasterExample - CPU Software Rasterizer demonstration
+# =============================================================================
+
+set(SOFTRASTER_EXAMPLE_SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/SoftRasterExample/main.cpp
+)
+
+add_executable(SoftRasterExample ${SOFTRASTER_EXAMPLE_SRC_FILES})
+target_link_libraries(SoftRasterExample LINK_PUBLIC WulfNet Jolt)
+
+target_compile_features(SoftRasterExample PUBLIC cxx_std_17)
+
+target_include_directories(SoftRasterExample PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+if(MSVC)
+    target_compile_options(SoftRasterExample PRIVATE
+        /WX-
+        /wd4820 /wd4514 /wd4625 /wd4626 /wd5026 /wd5027
+        /wd4464 /wd4100 /wd4365 /wd4061 /wd5219 /wd4668 /wd4530
+        /wd4710 /wd4711 /wd4743
+        /GL-
+    )
+    target_link_options(SoftRasterExample PUBLIC
+        "/SUBSYSTEM:CONSOLE"
+        "/LTCG:OFF"
+    )
+endif()
+
+set_target_properties(SoftRasterExample PROPERTIES FOLDER "WulfNet/Examples")
+
 message(STATUS "WulfNet Examples configured")

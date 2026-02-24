@@ -1,0 +1,63 @@
+#version 450
+
+// =============================================================================
+// WulfNet Engine - Final Parallel Reduction Shader
+// =============================================================================
+// Second pass: reduces the per-workgroup results from reduce_global into
+// a single value. Output index depends on operation type:
+//   MIN -> outputData[0], MAX -> outputData[1], ADD -> outputData[2]
+// =============================================================================
+
+layout(local_size_x = 128) in;
+
+layout(constant_id = 0) const uint REDUCTION_OP = 0;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    vec4 inputData[];
+};
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    vec4 outputData[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint reductionBufferSize;
+};
+
+shared vec3 gs_Reduce[128];
+
+vec3 reductionOp(vec3 v1, vec3 v2) {
+    if (REDUCTION_OP == 0u) return min(v1, v2);
+    if (REDUCTION_OP == 1u) return max(v1, v2);
+    return v1 + v2;
+}
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+
+    // Load - use tid for both local and global since this is the final pass
+    if (tid < reductionBufferSize) {
+        gs_Reduce[tid] = inputData[tid].xyz;
+    } else {
+        // Initialize with identity for the operation
+        if (REDUCTION_OP == 0u) gs_Reduce[tid] = vec3(1e15);
+        else if (REDUCTION_OP == 1u) gs_Reduce[tid] = vec3(-1e15);
+        else gs_Reduce[tid] = vec3(0.0);
+    }
+    barrier();
+    memoryBarrierShared();
+
+    // Sequential addressing reduction
+    for (uint s = 64u; s > 0u; s >>= 1u) {
+        if (tid < s) {
+            gs_Reduce[tid] = reductionOp(gs_Reduce[tid], gs_Reduce[tid + s]);
+        }
+        barrier();
+        memoryBarrierShared();
+    }
+
+    if (tid == 0u) {
+        // Write to slot based on operation type
+        outputData[REDUCTION_OP] = vec4(gs_Reduce[0], 0.0);
+    }
+}
