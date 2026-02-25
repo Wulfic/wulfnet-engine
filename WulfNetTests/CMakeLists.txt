@@ -47,8 +47,89 @@ endif()
 
 set_target_properties(WulfNetTests PROPERTIES FOLDER "WulfNet/Tests")
 
+# =============================================================================
+# WulfNet Extended Tests (CO-FLIP, FluidSurface, SystemMonitor, Advanced Physics, Integration)
+# =============================================================================
+set(WULFNET_EXTENDED_TEST_SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/WulfNetExtendedTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/COFLIPSystemTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/FluidSurfaceTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SystemMonitorTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/AdvancedPhysicsTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/IntegrationTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ConstitutiveModelTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TerrainDeformationTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MPMRigidCouplingTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GaseousSystemTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/DestructionSystemTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ShadowMapTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GlobalIlluminationTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VolumetricRendererTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/RenderPipelineTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/AudioEngineTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/AcousticSystemTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SpatialAudioTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceBenchmarks.cpp
+)
+
+add_executable(WulfNetExtendedTests ${WULFNET_EXTENDED_TEST_SRC_FILES})
+target_link_libraries(WulfNetExtendedTests LINK_PUBLIC WulfNet Jolt)
+
+# Set C++ standard
+target_compile_features(WulfNetExtendedTests PUBLIC cxx_std_17)
+
+# Include directories
+target_include_directories(WulfNetExtendedTests PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+# MSVC-specific settings (same as WulfNetTests)
+if(MSVC)
+    get_target_property(WULFNET_EXT_TESTS_CXX_FLAGS WulfNetExtendedTests COMPILE_OPTIONS)
+    if(WULFNET_EXT_TESTS_CXX_FLAGS)
+        list(REMOVE_ITEM WULFNET_EXT_TESTS_CXX_FLAGS "/WX")
+        set_target_properties(WulfNetExtendedTests PROPERTIES COMPILE_OPTIONS "${WULFNET_EXT_TESTS_CXX_FLAGS}")
+    endif()
+
+    target_compile_options(WulfNetExtendedTests PRIVATE
+        /WX-
+        /wd4820 /wd4514 /wd4625 /wd4626 /wd5026 /wd5027
+        /wd4464 /wd4100 /wd4365 /wd4061 /wd5219 /wd4668 /wd4530
+        /wd4710 /wd4711 /wd4743
+        /GL-
+    )
+    target_link_options(WulfNetExtendedTests PUBLIC
+        "/SUBSYSTEM:CONSOLE"
+        "/LTCG:OFF"
+    )
+endif()
+
+set_target_properties(WulfNetExtendedTests PROPERTIES FOLDER "WulfNet/Tests")
+
 # Register as CTest
 enable_testing()
 add_test(NAME WulfNetTests COMMAND WulfNetTests)
+add_test(NAME WulfNetExtendedTests COMMAND WulfNetExtendedTests)
+
+# Add per-suite CTest entries for fine-grained test selection
+add_test(NAME WulfNetExtended_COFLIP COMMAND WulfNetExtendedTests --suite=coflip)
+add_test(NAME WulfNetExtended_Surface COMMAND WulfNetExtendedTests --suite=surface)
+add_test(NAME WulfNetExtended_Monitor COMMAND WulfNetExtendedTests --suite=monitor)
+add_test(NAME WulfNetExtended_Physics COMMAND WulfNetExtendedTests --suite=physics)
+add_test(NAME WulfNetExtended_Integration COMMAND WulfNetExtendedTests --suite=integration)
+add_test(NAME WulfNetExtended_MPM COMMAND WulfNetExtendedTests --suite=mpm)
+add_test(NAME WulfNetExtended_Terrain COMMAND WulfNetExtendedTests --suite=terrain)
+add_test(NAME WulfNetExtended_Coupling COMMAND WulfNetExtendedTests --suite=coupling)
+add_test(NAME WulfNetExtended_Gaseous COMMAND WulfNetExtendedTests --suite=gaseous)
+add_test(NAME WulfNetExtended_Destruction COMMAND WulfNetExtendedTests --suite=destruction)
+add_test(NAME WulfNetExtended_Shadow COMMAND WulfNetExtendedTests --suite=shadow)
+add_test(NAME WulfNetExtended_GI COMMAND WulfNetExtendedTests --suite=gi)
+add_test(NAME WulfNetExtended_Volumetric COMMAND WulfNetExtendedTests --suite=volumetric)
+add_test(NAME WulfNetExtended_RenderPipeline COMMAND WulfNetExtendedTests --suite=pipeline)
+add_test(NAME WulfNetExtended_AudioEngine COMMAND WulfNetExtendedTests --suite=audio)
+add_test(NAME WulfNetExtended_AcousticSystem COMMAND WulfNetExtendedTests --suite=acoustic)
+add_test(NAME WulfNetExtended_SpatialAudio COMMAND WulfNetExtendedTests --suite=spatial)
+add_test(NAME WulfNetExtended_PerfBenchmarks COMMAND WulfNetExtendedTests --suite=benchmark)
 
 message(STATUS "WulfNet Tests configured")
+message(STATUS "WulfNet Extended Tests configured")

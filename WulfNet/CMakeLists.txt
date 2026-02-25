@@ -30,6 +30,19 @@ set(WULFNET_SOURCES
     Physics/Fluids/COFLIPSystem.cpp
     Physics/Fluids/FluidSurface.cpp
 
+    # Physics - MPM Constitutive Models
+    Physics/MPM/ConstitutiveModel.cpp
+    Physics/MPM/MPMRigidCoupling.cpp
+
+    # Physics - Terrain Deformation
+    Physics/Terrain/TerrainDeformation.cpp
+
+    # Physics - Gaseous Simulation
+    Physics/Gaseous/GaseousSystem.cpp
+
+    # Physics - Destruction System
+    Physics/Destruction/DestructionSystem.cpp
+
     # GPU Compute
     Compute/Vulkan/VulkanContext.cpp
     Compute/Memory/ComputeBuffer.cpp
@@ -48,6 +61,22 @@ set(WULFNET_SOURCES
     Rendering/SoftwareRasterizer/SoftwareRasterizer.cpp
     Rendering/SoftwareRasterizer/DeferredShading.cpp
     Rendering/SoftwareRasterizer/OcclusionCuller.cpp
+
+    # Rendering - Pipeline & Effects
+    Rendering/SoftwareRasterizer/ShadowMap.cpp
+    Rendering/SoftwareRasterizer/GlobalIllumination.cpp
+    Rendering/SoftwareRasterizer/VolumetricRenderer.cpp
+    Rendering/SoftwareRasterizer/RenderPipeline.cpp
+
+    # Audio - Core
+    Audio/Core/AudioTypes.cpp
+    Audio/Core/AudioMixer.cpp
+
+    # Audio - Acoustics
+    Audio/Acoustics/AcousticSystem.cpp
+
+    # Audio - Spatial
+    Audio/Spatial/SpatialAudio.cpp
 )
 
 set(WULFNET_HEADERS
@@ -71,6 +100,19 @@ set(WULFNET_HEADERS
     Physics/Fluids/COFLIPSystem.h
     Physics/Fluids/FluidSurface.h
 
+    # Physics - MPM Constitutive Models
+    Physics/MPM/ConstitutiveModel.h
+    Physics/MPM/MPMRigidCoupling.h
+
+    # Physics - Terrain Deformation
+    Physics/Terrain/TerrainDeformation.h
+
+    # Physics - Gaseous Simulation
+    Physics/Gaseous/GaseousSystem.h
+
+    # Physics - Destruction System
+    Physics/Destruction/DestructionSystem.h
+
     # GPU Compute
     Compute/Compute.h
     Compute/Vulkan/VulkanContext.h
@@ -91,6 +133,22 @@ set(WULFNET_HEADERS
     Rendering/SoftwareRasterizer/SoftwareRasterizer.h
     Rendering/SoftwareRasterizer/DeferredShading.h
     Rendering/SoftwareRasterizer/OcclusionCuller.h
+
+    # Rendering - Pipeline & Effects
+    Rendering/SoftwareRasterizer/ShadowMap.h
+    Rendering/SoftwareRasterizer/GlobalIllumination.h
+    Rendering/SoftwareRasterizer/VolumetricRenderer.h
+    Rendering/SoftwareRasterizer/RenderPipeline.h
+
+    # Audio - Core
+    Audio/Core/AudioTypes.h
+    Audio/Core/AudioMixer.h
+
+    # Audio - Acoustics
+    Audio/Acoustics/AcousticSystem.h
+
+    # Audio - Spatial
+    Audio/Spatial/SpatialAudio.h
 )
 
 # Create the WulfNet library

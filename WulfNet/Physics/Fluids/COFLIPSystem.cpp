@@ -190,11 +190,12 @@ void COFLIPSystem::Reset() {
 // =============================================================================
 
 void COFLIPSystem::Step(float dt) {
-    if (!m_initialized || m_activeParticles == 0) return;
+    if (!m_initialized) return;
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // Process emitters
+    // Process emitters (must happen before the active-particle check so
+    // emitters can inject particles into an otherwise empty system)
     for (auto& emitter : m_emitters) {
         emitter.accumulator += emitter.rate * dt;
         while (emitter.accumulator >= 1.0f) {
@@ -212,6 +213,9 @@ void COFLIPSystem::Step(float dt) {
             }
         }
     }
+
+    // Skip simulation if there are no particles to simulate
+    if (m_activeParticles == 0) return;
 
     if (m_gpuEnabled) {
         // GPU path - Use batched dispatch for maximum performance

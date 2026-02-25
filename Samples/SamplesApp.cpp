@@ -55,6 +55,7 @@
 #include <Renderer/DebugRendererImp.h>
 #include <Tests/WulfNet/WulfNetFluidTest.h>
 #include <Tests/WulfNet/WulfNetPhysicsTests.h>
+#include <Tests/WulfNet/WulfNetAdvancedTests.h>
 
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #include <fstream>
@@ -457,6 +458,13 @@ JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetSmokeTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetOcclusionTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFallingFractalTest)
 
+// WulfNet Advanced Visual Tests (Phase 6-8: gaseous, destruction, terrain, volumetric, audio)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetGasTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetDestructionVisualTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetTerrainVisualTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetVolumetricVisualTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetAudioVisualTest)
+
 static TestNameAndRTTI sWulfNetTests[] =
 {
 	{ "River (MPM)",						JPH_RTTI(WulfNetRiverTest) },
@@ -471,6 +479,11 @@ static TestNameAndRTTI sWulfNetTests[] =
 	{ "Smoke & Fire",						JPH_RTTI(WulfNetSmokeTest) },
 	{ "Occlusion Culling (CPU)",			JPH_RTTI(WulfNetOcclusionTest) },
 	{ "Falling Bodies + Fractal",			JPH_RTTI(WulfNetFallingFractalTest) },
+	{ "Gaseous Dynamics (Fire)",			JPH_RTTI(WulfNetGasTest) },
+	{ "Voronoi Destruction",				JPH_RTTI(WulfNetDestructionVisualTest) },
+	{ "Terrain Deformation",				JPH_RTTI(WulfNetTerrainVisualTest) },
+	{ "Volumetric Clouds",					JPH_RTTI(WulfNetVolumetricVisualTest) },
+	{ "Spatial Audio & Acoustics",			JPH_RTTI(WulfNetAudioVisualTest) },
 };
 
 static TestCategory sAllCategories[] =
