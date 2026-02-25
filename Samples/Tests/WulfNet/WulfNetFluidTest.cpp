@@ -79,15 +79,15 @@ void WulfNetFluidTest::Initialize()
 	// Create ground floor
 	CreateFloor();
 
-	// Default CO-FLIP configuration (low resolution works well with CO-FLIP!)
-	mFluidConfig.gridSizeX = 48;
-	mFluidConfig.gridSizeY = 32;
-	mFluidConfig.gridSizeZ = 48;
-	mFluidConfig.cellSize = 0.15f;  // 15cm cells
+	// Default CO-FLIP configuration — optimized for larger particles / fewer total
+	mFluidConfig.gridSizeX = 32;
+	mFluidConfig.gridSizeY = 24;
+	mFluidConfig.gridSizeZ = 32;
+	mFluidConfig.cellSize = 0.25f;  // 25cm cells — 4× fewer particles vs 0.15
 	mFluidConfig.dt = 1.0f / 60.0f;
 	mFluidConfig.flipRatio = 0.99f;
-	mFluidConfig.pressureIterations = 30;
-	mFluidConfig.particlesPerCell = 8;
+	mFluidConfig.pressureIterations = 40;
+	mFluidConfig.particlesPerCell = 4;
 	mFluidConfig.useGPU = true;  // GPU accelerated via Jolt compute system
 
 	// Surface configuration (marching cubes)
@@ -95,10 +95,10 @@ void WulfNetFluidTest::Initialize()
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
 	mSurfaceConfig.gridSizeZ = mFluidConfig.gridSizeZ;
 	mSurfaceConfig.cellSize = mFluidConfig.cellSize;
-	mSurfaceConfig.splatRadius = 2.5f;
-	mSurfaceConfig.smoothingSigma = 1.2f;
-	mSurfaceConfig.isoLevel = 0.4f;
-	mSurfaceConfig.useGPU = false;
+	mSurfaceConfig.splatRadius = 3.5f;
+	mSurfaceConfig.smoothingSigma = 1.4f;
+	mSurfaceConfig.isoLevel = 0.3f;
+	mSurfaceConfig.useGPU = true;
 
 	// Initialize fluid system with Jolt's compute system for GPU acceleration
 	if (mComputeSystem) {
@@ -314,11 +314,11 @@ String WulfNetFluidTest::GetStatusString() const
 
 void WulfNetRiverTest::SetupFluid()
 {
-	// Configure for river simulation (CO-FLIP works great at lower resolutions)
-	mFluidConfig.gridSizeX = 64;
-	mFluidConfig.gridSizeY = 24;
-	mFluidConfig.gridSizeZ = 32;
-	mFluidConfig.cellSize = 0.12f;
+	// River — elongated domain, moderate resolution
+	mFluidConfig.gridSizeX = 40;
+	mFluidConfig.gridSizeY = 16;
+	mFluidConfig.gridSizeZ = 20;
+	mFluidConfig.cellSize = 0.22f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -337,8 +337,8 @@ void WulfNetRiverTest::SetupFluid()
 	// Create initial water body
 	CreateWaterBox(0.5f, 0.2f, 0.5f, 5.0f, 0.8f, 2.5f);
 
-	// Create emitter at one end
-	CreateEmitter(0.3f, 0.5f, 1.5f, 1.0f, 0.0f, 0.0f, 200.0f, 1.5f);
+	// Emitter — halved rate from 200→100 (larger particles fill same volume)
+	CreateEmitter(0.3f, 0.5f, 1.5f, 1.0f, 0.0f, 0.0f, 100.0f, 1.5f);
 
 	CreateRiverChannel();
 }
@@ -390,11 +390,11 @@ void WulfNetRiverTest::CreateRiverChannel()
 
 void WulfNetWaterfallTest::SetupFluid()
 {
-	// Configure for waterfall (needs vertical space)
-	mFluidConfig.gridSizeX = 48;
-	mFluidConfig.gridSizeY = 48;
-	mFluidConfig.gridSizeZ = 48;
-	mFluidConfig.cellSize = 0.1f;
+	// Waterfall — needs vertical space, moderate XZ
+	mFluidConfig.gridSizeX = 28;
+	mFluidConfig.gridSizeY = 32;
+	mFluidConfig.gridSizeZ = 28;
+	mFluidConfig.cellSize = 0.18f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -413,8 +413,8 @@ void WulfNetWaterfallTest::SetupFluid()
 	// Create pool at bottom
 	CreateWaterBox(1.0f, 0.2f, 1.0f, 3.5f, 0.6f, 3.5f);
 
-	// Create falling water emitter at top
-	CreateEmitter(2.3f, 3.5f, 2.3f, 0.0f, -1.0f, 0.0f, 300.0f, 0.5f);
+	// Emitter — halved from 300→150
+	CreateEmitter(2.3f, 3.5f, 2.3f, 0.0f, -1.0f, 0.0f, 150.0f, 0.5f);
 }
 
 void WulfNetWaterfallTest::SetupObjects()
@@ -445,11 +445,11 @@ void WulfNetWaterfallTest::SetupObjects()
 
 void WulfNetPuddleTest::SetupFluid()
 {
-	// Small puddle configuration
-	mFluidConfig.gridSizeX = 32;
-	mFluidConfig.gridSizeY = 16;
-	mFluidConfig.gridSizeZ = 32;
-	mFluidConfig.cellSize = 0.08f;
+	// Small puddle — tiny domain, moderate cells
+	mFluidConfig.gridSizeX = 20;
+	mFluidConfig.gridSizeY = 12;
+	mFluidConfig.gridSizeZ = 20;
+	mFluidConfig.cellSize = 0.14f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -468,8 +468,8 @@ void WulfNetPuddleTest::SetupFluid()
 	// Create small puddle
 	CreateWaterBox(0.8f, 0.1f, 0.8f, 1.8f, 0.3f, 1.8f);
 
-	// Rain drops falling into puddle
-	CreateEmitter(1.3f, 1.2f, 1.3f, 0.0f, -1.0f, 0.0f, 50.0f, 0.2f);
+	// Rain drops — reduced from 50→30
+	CreateEmitter(1.3f, 1.2f, 1.3f, 0.0f, -1.0f, 0.0f, 30.0f, 0.2f);
 }
 
 // =============================================================================
@@ -478,11 +478,11 @@ void WulfNetPuddleTest::SetupFluid()
 
 void WulfNetLakeTest::SetupFluid()
 {
-	// Large lake configuration
-	mFluidConfig.gridSizeX = 64;
-	mFluidConfig.gridSizeY = 24;
-	mFluidConfig.gridSizeZ = 64;
-	mFluidConfig.cellSize = 0.15f;
+	// Large lake — coarser cells for massive volume
+	mFluidConfig.gridSizeX = 40;
+	mFluidConfig.gridSizeY = 16;
+	mFluidConfig.gridSizeZ = 40;
+	mFluidConfig.cellSize = 0.25f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -536,11 +536,11 @@ void WulfNetLakeTest::SetupObjects()
 
 void WulfNetViscosityTest::SetupFluid()
 {
-	// Standard grid for comparison
-	mFluidConfig.gridSizeX = 64;
-	mFluidConfig.gridSizeY = 32;
-	mFluidConfig.gridSizeZ = 32;
-	mFluidConfig.cellSize = 0.1f;
+	// Viscosity comparison — moderate grid
+	mFluidConfig.gridSizeX = 36;
+	mFluidConfig.gridSizeY = 20;
+	mFluidConfig.gridSizeZ = 20;
+	mFluidConfig.cellSize = 0.2f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -568,10 +568,10 @@ void WulfNetViscosityTest::SetupFluid()
 
 void WulfNetBuoyancyTest::SetupFluid()
 {
-	mFluidConfig.gridSizeX = 48;
-	mFluidConfig.gridSizeY = 32;
-	mFluidConfig.gridSizeZ = 48;
-	mFluidConfig.cellSize = 0.12f;
+	mFluidConfig.gridSizeX = 28;
+	mFluidConfig.gridSizeY = 20;
+	mFluidConfig.gridSizeZ = 28;
+	mFluidConfig.cellSize = 0.22f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -652,10 +652,10 @@ void WulfNetBuoyancyTest::SetupObjects()
 
 void WulfNetRagdollSwimTest::SetupFluid()
 {
-	mFluidConfig.gridSizeX = 48;
-	mFluidConfig.gridSizeY = 32;
-	mFluidConfig.gridSizeZ = 48;
-	mFluidConfig.cellSize = 0.12f;
+	mFluidConfig.gridSizeX = 28;
+	mFluidConfig.gridSizeY = 20;
+	mFluidConfig.gridSizeZ = 28;
+	mFluidConfig.cellSize = 0.22f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
@@ -741,10 +741,10 @@ void WulfNetRagdollSwimTest::CreateRagdoll(float x, float y, float z)
 
 void WulfNetClothWaterTest::SetupFluid()
 {
-	mFluidConfig.gridSizeX = 48;
-	mFluidConfig.gridSizeY = 32;
-	mFluidConfig.gridSizeZ = 48;
-	mFluidConfig.cellSize = 0.1f;
+	mFluidConfig.gridSizeX = 28;
+	mFluidConfig.gridSizeY = 20;
+	mFluidConfig.gridSizeZ = 28;
+	mFluidConfig.cellSize = 0.2f;
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
