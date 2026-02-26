@@ -37,6 +37,10 @@ namespace WulfNet {
 void COFLIPSystem::SortParticlesByCell_CPU() {
     const uint32_t nParticles = m_activeParticles;
     const uint32_t nCells = m_gridTotalCells;
+    const float invCellSize = 1.0f / m_config.cellSize;
+    const int maxI = static_cast<int>(m_config.gridSizeX) - 1;
+    const int maxJ = static_cast<int>(m_config.gridSizeY) - 1;
+    const int maxK = static_cast<int>(m_config.gridSizeZ) - 1;
 
     // Resize buffers if needed (persistent across frames)
     if (m_cellCount.size() != nCells) {
@@ -46,55 +50,85 @@ void COFLIPSystem::SortParticlesByCell_CPU() {
     if (m_sortedParticles.size() < nParticles) {
         m_sortedParticles.resize(nParticles);
     }
+    // Cache per-particle cell indices to avoid recomputing in the scatter pass
+    if (m_particleCellIdx.size() < nParticles) {
+        m_particleCellIdx.resize(nParticles);
+    }
 
     // Step 1: Clear cell counts
     std::memset(m_cellCount.data(), 0, nCells * sizeof(uint32_t));
 
-    // Step 2: Count particles per cell
-    for (uint32_t p = 0; p < nParticles; ++p) {
-        const COFLIPParticle& part = m_particles[p];
-        if (!(part.flags & 1)) continue;
-
-        int ci = static_cast<int>(part.x / m_config.cellSize);
-        int cj = static_cast<int>(part.y / m_config.cellSize);
-        int ck = static_cast<int>(part.z / m_config.cellSize);
-
-        // Clamp to grid bounds
-        ci = std::max(0, std::min(ci, static_cast<int>(m_config.gridSizeX) - 1));
-        cj = std::max(0, std::min(cj, static_cast<int>(m_config.gridSizeY) - 1));
-        ck = std::max(0, std::min(ck, static_cast<int>(m_config.gridSizeZ) - 1));
-
-        m_cellCount[GridIndex(ci, cj, ck)]++;
+    // Step 2: Count particles per cell + cache cell indices.
+    // Parallelize with thread-local count arrays to avoid atomics.
+#ifdef WULFNET_HAS_OPENMP
+    const int nThreads = omp_get_max_threads();
+    // Thread-local count arrays (reuse across frames — lazy resize)
+    if (m_sortCountBuf.size() != static_cast<size_t>(nThreads) * nCells) {
+        m_sortCountBuf.assign(static_cast<size_t>(nThreads) * nCells, 0);
+    } else {
+        std::memset(m_sortCountBuf.data(), 0, m_sortCountBuf.size() * sizeof(uint32_t));
     }
 
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        uint32_t* localCount = m_sortCountBuf.data() + static_cast<size_t>(tid) * nCells;
+
+        #pragma omp for schedule(static)
+        for (int32_t p = 0; p < static_cast<int32_t>(nParticles); ++p) {
+            const COFLIPParticle& part = m_particles[p];
+            if (!(part.flags & 1)) { m_particleCellIdx[p] = UINT32_MAX; continue; }
+
+            int ci = std::max(0, std::min(static_cast<int>(part.x * invCellSize), maxI));
+            int cj = std::max(0, std::min(static_cast<int>(part.y * invCellSize), maxJ));
+            int ck = std::max(0, std::min(static_cast<int>(part.z * invCellSize), maxK));
+            uint32_t cellIdx = GridIndex(ci, cj, ck);
+            m_particleCellIdx[p] = cellIdx;
+            localCount[cellIdx]++;
+        }
+    }
+
+    // Merge thread-local counts into m_cellCount
+    #pragma omp parallel for schedule(static)
+    for (int32_t c = 0; c < static_cast<int32_t>(nCells); ++c) {
+        uint32_t total = 0;
+        for (int t = 0; t < nThreads; ++t) {
+            total += m_sortCountBuf[static_cast<size_t>(t) * nCells + c];
+        }
+        m_cellCount[c] = total;
+    }
+#else
+    for (uint32_t p = 0; p < nParticles; ++p) {
+        const COFLIPParticle& part = m_particles[p];
+        if (!(part.flags & 1)) { m_particleCellIdx[p] = UINT32_MAX; continue; }
+
+        int ci = std::max(0, std::min(static_cast<int>(part.x * invCellSize), maxI));
+        int cj = std::max(0, std::min(static_cast<int>(part.y * invCellSize), maxJ));
+        int ck = std::max(0, std::min(static_cast<int>(part.z * invCellSize), maxK));
+        uint32_t cellIdx = GridIndex(ci, cj, ck);
+        m_particleCellIdx[p] = cellIdx;
+        m_cellCount[cellIdx]++;
+    }
+#endif
+
     // Step 3: Exclusive prefix sum → m_cellStart[i] = sum of counts before cell i
+    // Sequential — operates on nCells only, cache-friendly linear scan
     uint32_t runningSum = 0;
     for (uint32_t i = 0; i < nCells; ++i) {
         m_cellStart[i] = runningSum;
         runningSum += m_cellCount[i];
     }
 
-    // Step 4: Scatter particles into sorted order (stable)
-    // Reset cellCount to reuse as write cursors
+    // Step 4: Scatter particles into sorted order (stable).
+    // Uses cached cell indices from Step 2 — avoids recomputing positions.
     std::memset(m_cellCount.data(), 0, nCells * sizeof(uint32_t));
 
     for (uint32_t p = 0; p < nParticles; ++p) {
-        const COFLIPParticle& part = m_particles[p];
-        if (!(part.flags & 1)) {
-            // Inactive particles go at the end (won't be processed)
-            continue;
-        }
+        uint32_t cellIdx = m_particleCellIdx[p];
+        if (cellIdx == UINT32_MAX) continue; // inactive particle
 
-        int ci = static_cast<int>(part.x / m_config.cellSize);
-        int cj = static_cast<int>(part.y / m_config.cellSize);
-        int ck = static_cast<int>(part.z / m_config.cellSize);
-        ci = std::max(0, std::min(ci, static_cast<int>(m_config.gridSizeX) - 1));
-        cj = std::max(0, std::min(cj, static_cast<int>(m_config.gridSizeY) - 1));
-        ck = std::max(0, std::min(ck, static_cast<int>(m_config.gridSizeZ) - 1));
-
-        int cellIdx = GridIndex(ci, cj, ck);
         uint32_t dest = m_cellStart[cellIdx] + m_cellCount[cellIdx];
-        m_sortedParticles[dest] = part;
+        m_sortedParticles[dest] = m_particles[p];
         m_cellCount[cellIdx]++;
     }
 
@@ -396,23 +430,26 @@ void COFLIPSystem::ComputeDivergence_CPU() {
 
 void COFLIPSystem::PressureSolve_CPU() {
     // Red-Black Gauss-Seidel with SOR — converges ~2.5x faster than Jacobi.
-    // This eliminates the need for the temporary pressure buffer (in-place update)
-    // and allows us to halve the iteration count for equivalent accuracy.
+    // Early termination when the maximum pressure change drops below a threshold.
 
     float dx2 = m_config.cellSize * m_config.cellSize;
     float scale = m_config.dt * m_config.restDensity;
     float omega = 1.7f;  // SOR relaxation factor (1.0 = plain GS, 1.7 = optimal for Poisson)
+    constexpr float convergenceThreshold = 1e-5f;  // Early termination threshold
 
     const int32_t NX = static_cast<int32_t>(m_config.gridSizeX);
     const int32_t NY = static_cast<int32_t>(m_config.gridSizeY);
     const int32_t NZ = static_cast<int32_t>(m_config.gridSizeZ);
 
     for (uint32_t iter = 0; iter < m_config.pressureIterations; ++iter) {
+        float maxDelta = 0.0f;
+
         // Two sub-sweeps per iteration: Red cells then Black cells
         // Red: (i+j+k) % 2 == 0,  Black: (i+j+k) % 2 == 1
         for (int color = 0; color < 2; ++color) {
+            float colorMaxDelta = 0.0f;
 #ifdef WULFNET_HAS_OPENMP
-            #pragma omp parallel for collapse(2) schedule(static)
+            #pragma omp parallel for collapse(2) schedule(static) reduction(max:colorMaxDelta)
 #endif
             for (int32_t k = 1; k < NZ - 1; ++k) {
                 for (int32_t j = 1; j < NY - 1; ++j) {
@@ -477,12 +514,21 @@ void COFLIPSystem::PressureSolve_CPU() {
                         if (neighbors > 0) {
                             float pNew = (pSum - dx2 * m_grid[idx].divergence * scale) / neighbors;
                             // SOR: p = (1-omega)*p_old + omega*p_new
-                            m_grid[idx].pressure = (1.0f - omega) * m_grid[idx].pressure + omega * pNew;
+                            float pOld = m_grid[idx].pressure;
+                            float pUpdated = (1.0f - omega) * pOld + omega * pNew;
+                            m_grid[idx].pressure = pUpdated;
+                            float delta = std::abs(pUpdated - pOld);
+                            if (delta > colorMaxDelta) colorMaxDelta = delta;
                         }
                     }
                 }
             }
+            if (colorMaxDelta > maxDelta) maxDelta = colorMaxDelta;
         }
+
+        // Early termination: if the maximum pressure change is tiny, we've converged
+        if (maxDelta < convergenceThreshold)
+            break;
     }
 }
 
@@ -558,10 +604,11 @@ void COFLIPSystem::GridToParticle_CPU() {
         COFLIPParticle& part = m_particles[p];
         if (!(part.flags & 1)) continue;
 
-        // Interpolate new grid velocity (PIC) — factored cubic B-spline
-        // (12 BSpline calls instead of 192, via precomputed 1D weights)
+        // Interpolate new grid velocity (PIC) — quadratic B-spline
+        // (9 QuadraticBSpline calls, 27 samples/component instead of 64)
+        // Quadratic is ~2.4x fewer grid reads with negligible quality loss in G2P.
         float picVx, picVy, picVz;
-        InterpolateDivergenceFree(part.x, part.y, part.z, picVx, picVy, picVz);
+        InterpolateDivergenceFreeQuadratic(part.x, part.y, part.z, picVx, picVy, picVz);
 
         // Interpolate old grid velocity for FLIP delta
         float gx, gy, gz;

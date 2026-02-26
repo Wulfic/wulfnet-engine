@@ -70,6 +70,38 @@ void WulfNetWaterV5Base::Initialize()
 		initWater += mGrid[i].waterHeight;
 	SWE_LOG_INFO("[INIT] Setup complete — TotalWater: " +
 	             std::to_string(initWater) + " | WetCells initial scan done");
+
+	// --- GPU Compute Initialization ---
+	// Attempt to initialize GPU SWE compute if config requests it.
+	// WaterCell is { waterHeight, terrainHeight, vx, vz } = 4 floats = vec4,
+	// which maps directly to the GPU buffer layout.
+	mGPUEnabled = false;
+	if (mConfig.useGPU)
+	{
+		mGPUCompute = std::make_unique<WulfNet::SWEComputeGPU>();
+		if (mGPUCompute->Initialize(mConfig.gridSizeX, mConfig.gridSizeZ))
+		{
+			// Upload initial grid state to GPU
+			static_assert(sizeof(WaterCell) == 4 * sizeof(float),
+			              "WaterCell must be 4 contiguous floats for GPU upload");
+			if (mGPUCompute->UploadGrid(reinterpret_cast<const float*>(mGrid.data()), totalCells))
+			{
+				mGPUEnabled = true;
+				SWE_LOG_INFO("[GPU] SWE GPU compute initialized — " +
+				             std::to_string(totalCells) + " cells on GPU");
+			}
+			else
+			{
+				SWE_LOG_INFO("[GPU] Failed to upload grid — falling back to CPU");
+				mGPUCompute.reset();
+			}
+		}
+		else
+		{
+			SWE_LOG_INFO("[GPU] SWE GPU compute unavailable — falling back to CPU");
+			mGPUCompute.reset();
+		}
+	}
 }
 
 // =====================================================================
@@ -237,6 +269,7 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 	const uint32_t NZ = mConfig.gridSizeZ;
 	const float g     = mConfig.gravity;
 	const float cs    = mConfig.cellSize;
+	const float g_over_cs = g / cs;
 	const float damp  = 1.0f - mConfig.damping;
 	const float visc  = mConfig.viscosity;
 	const uint32_t total = NX * NZ;
@@ -279,10 +312,10 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 			const WaterCell &nB = mGridTemp[idx - NX];
 			const WaterCell &nF = mGridTemp[idx + NX];
 
-			float fluxL = g * (surfH - (nL.terrainHeight + nL.waterHeight)) / cs;
-			float fluxR = g * (surfH - (nR.terrainHeight + nR.waterHeight)) / cs;
-			float fluxB = g * (surfH - (nB.terrainHeight + nB.waterHeight)) / cs;
-			float fluxF = g * (surfH - (nF.terrainHeight + nF.waterHeight)) / cs;
+			float fluxL = g_over_cs * (surfH - (nL.terrainHeight + nL.waterHeight));
+			float fluxR = g_over_cs * (surfH - (nR.terrainHeight + nR.waterHeight));
+			float fluxB = g_over_cs * (surfH - (nB.terrainHeight + nB.waterHeight));
+			float fluxF = g_over_cs * (surfH - (nF.terrainHeight + nF.waterHeight));
 
 			float newVx = (src.vx + (fluxR - fluxL) * 0.5f * dt) * damp;
 			float newVz = (src.vz + (fluxF - fluxB) * 0.5f * dt) * damp;
@@ -328,8 +361,12 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 		uint32_t dsNX = (NX + DS - 1) / DS + 1;
 		uint32_t dsNZ = (NZ + DS - 1) / DS + 1;
 
-		std::vector<float> noiseBufVx(dsNX * dsNZ);
-		std::vector<float> noiseBufVz(dsNX * dsNZ);
+		const size_t noiseBufSize = static_cast<size_t>(dsNX) * dsNZ;
+		if (mNoiseBufVx.size() != noiseBufSize)
+		{
+			mNoiseBufVx.resize(noiseBufSize);
+			mNoiseBufVz.resize(noiseBufSize);
+		}
 
 		#pragma omp parallel for collapse(2) schedule(static)
 		for (int32_t dz = 0; dz < static_cast<int32_t>(dsNZ); ++dz)
@@ -339,10 +376,10 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 				float fz = static_cast<float>(static_cast<uint32_t>(dz) * DS) * freq / NZ;
 				float fx = static_cast<float>(static_cast<uint32_t>(dx) * DS) * freq / NX;
 				uint32_t idx = static_cast<uint32_t>(dz) * dsNX + static_cast<uint32_t>(dx);
-				noiseBufVx[idx] = mNoise.FBM3D(fx, fz, t * speed,
-				                                oct, lac, per, str, 1.0f);
-				noiseBufVz[idx] = mNoise.FBM3D(fx + 17.3f, fz + 31.7f, t * speed + 5.0f,
-				                                oct, lac, per, str, 1.0f);
+				mNoiseBufVx[idx] = mNoise.FBM3D(fx, fz, t * speed,
+				                                 oct, lac, per, str, 1.0f);
+				mNoiseBufVz[idx] = mNoise.FBM3D(fx + 17.3f, fz + 31.7f, t * speed + 5.0f,
+				                                 oct, lac, per, str, 1.0f);
 			}
 		}
 
@@ -365,15 +402,15 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 				uint32_t cx1 = std::min(cx0 + 1, dsNX - 1);
 				float fx = cx - cx0;
 
-				float nVx = (1-fx)*(1-fz) * noiseBufVx[cz0*dsNX+cx0]
-				          + fx*(1-fz)     * noiseBufVx[cz0*dsNX+cx1]
-				          + (1-fx)*fz     * noiseBufVx[cz1*dsNX+cx0]
-				          + fx*fz         * noiseBufVx[cz1*dsNX+cx1];
+				float nVx = (1-fx)*(1-fz) * mNoiseBufVx[cz0*dsNX+cx0]
+				          + fx*(1-fz)     * mNoiseBufVx[cz0*dsNX+cx1]
+				          + (1-fx)*fz     * mNoiseBufVx[cz1*dsNX+cx0]
+				          + fx*fz         * mNoiseBufVx[cz1*dsNX+cx1];
 
-				float nVz = (1-fx)*(1-fz) * noiseBufVz[cz0*dsNX+cx0]
-				          + fx*(1-fz)     * noiseBufVz[cz0*dsNX+cx1]
-				          + (1-fx)*fz     * noiseBufVz[cz1*dsNX+cx0]
-				          + fx*fz         * noiseBufVz[cz1*dsNX+cx1];
+				float nVz = (1-fx)*(1-fz) * mNoiseBufVz[cz0*dsNX+cx0]
+				          + fx*(1-fz)     * mNoiseBufVz[cz0*dsNX+cx1]
+				          + (1-fx)*fz     * mNoiseBufVz[cz1*dsNX+cx0]
+				          + fx*fz         * mNoiseBufVz[cz1*dsNX+cx1];
 
 				float depthScale = std::min(1.0f, cell.waterHeight * 10.0f);
 				cell.vx += nVx * depthScale;
@@ -386,7 +423,8 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 	// Restructured from scatter to gather for thread-safe parallelism:
 	//   Pass 1: Compute directional outflows per cell (no race — each cell writes its own)
 	//   Pass 2: Each cell gathers inflow from neighbours' outflow toward it
-	std::memcpy(mGridTemp.data(), mGrid.data(), total * sizeof(WaterCell));
+	// NOTE: No second memcpy needed — Phase 1/1.5 only modified .vx/.vz,
+	// and Phase 2 reads only .waterHeight/.terrainHeight from mGridTemp (unchanged).
 
 	// Ensure outflow buffer is correctly sized (reused across frames — no allocation)
 	const size_t outflowSize = static_cast<size_t>(total) * 4;
@@ -522,11 +560,111 @@ void WulfNetWaterV5Base::PrePhysicsUpdate(const PreUpdateParams &inParams)
 	// Advance noise time for animated ripples
 	mNoiseTime += inParams.mDeltaTime;
 
-	// Step the SWE solver
+	// Step the SWE solver with adaptive CFL-based substepping.
+	// Instead of a fixed substep count, we compute the maximum wave speed
+	// (v_max + sqrt(g*h_max)) and choose dt so CFL = v*dt/dx < CFL_TARGET.
+	// This avoids both instability (CFL>>1) and wasted work when slow.
 	auto simStart = std::chrono::high_resolution_clock::now();
-	float subDt = inParams.mDeltaTime / static_cast<float>(mConfig.substeps);
-	for (uint32_t s = 0; s < mConfig.substeps; ++s)
-		StepSWE(subDt);
+	{
+		constexpr float CFL_TARGET  = 0.45f;  // Conservative target
+		constexpr float MIN_SUB_DT  = 1e-6f;  // Safety floor
+		constexpr uint32_t MAX_SUBS = 200;     // Hard cap to prevent runaway
+
+		const float cs = mConfig.cellSize;
+		const float g  = mConfig.gravity;
+		float remaining = inParams.mDeltaTime;
+		uint32_t subCount = 0;
+
+		// Build GPU params struct once (dt updated per substep)
+		WulfNet::SWESimParams gpuParams{};
+		gpuParams.gridSizeX     = mConfig.gridSizeX;
+		gpuParams.gridSizeZ     = mConfig.gridSizeZ;
+		gpuParams.gravity_over_cs = g / cs;
+		gpuParams.damping       = 1.0f - mConfig.damping;
+		gpuParams.viscosity     = mConfig.viscosity;
+		gpuParams.dt            = 0.0f;
+
+		if (mGPUEnabled && mGPUCompute && mGPUCompute->IsInitialized())
+		{
+			// ===== GPU PATH =====
+			// Upload current CPU grid to GPU (includes any scenario updates)
+			mGPUCompute->UploadGrid(reinterpret_cast<const float*>(mGrid.data()),
+			                         mConfig.gridSizeX * mConfig.gridSizeZ);
+
+			while (remaining > MIN_SUB_DT && subCount < MAX_SUBS)
+			{
+				// CFL scan (CPU — fast on the local grid copy)
+				float maxSpeed2 = 0.0f;
+				float maxDepth  = 0.0f;
+				const int32_t total = static_cast<int32_t>(mConfig.gridSizeX * mConfig.gridSizeZ);
+				#pragma omp parallel for schedule(static) reduction(max:maxSpeed2,maxDepth)
+				for (int32_t i = 0; i < total; ++i)
+				{
+					float s2 = mGrid[i].vx * mGrid[i].vx + mGrid[i].vz * mGrid[i].vz;
+					if (s2 > maxSpeed2) maxSpeed2 = s2;
+					if (mGrid[i].waterHeight > maxDepth) maxDepth = mGrid[i].waterHeight;
+				}
+
+				float maxVel = std::sqrt(maxSpeed2);
+				float waveSpeed = maxVel + std::sqrt(g * maxDepth);
+
+				float subDt;
+				if (waveSpeed > 1e-6f)
+					subDt = CFL_TARGET * cs / waveSpeed;
+				else
+					subDt = remaining;
+
+				subDt = std::min(subDt, remaining);
+				subDt = std::max(subDt, MIN_SUB_DT);
+
+				// Dispatch GPU SWE step (batched: snapshot→vel→outflow→gather→boundary)
+				gpuParams.dt = subDt;
+				mGPUCompute->StepSWE(gpuParams);
+
+				remaining -= subDt;
+				++subCount;
+
+				// Download after each substep for CFL scan accuracy
+				// (GPU→CPU transfer is ~150KB for 80×80 grid, very fast)
+				mGPUCompute->DownloadGrid(reinterpret_cast<float*>(mGrid.data()),
+				                           mConfig.gridSizeX * mConfig.gridSizeZ);
+			}
+		}
+		else
+		{
+			// ===== CPU PATH (fallback) =====
+			while (remaining > MIN_SUB_DT && subCount < MAX_SUBS)
+			{
+				float maxSpeed2 = 0.0f;
+				float maxDepth  = 0.0f;
+				const int32_t total = static_cast<int32_t>(mConfig.gridSizeX * mConfig.gridSizeZ);
+				#pragma omp parallel for schedule(static) reduction(max:maxSpeed2,maxDepth)
+				for (int32_t i = 0; i < total; ++i)
+				{
+					float s2 = mGrid[i].vx * mGrid[i].vx + mGrid[i].vz * mGrid[i].vz;
+					if (s2 > maxSpeed2) maxSpeed2 = s2;
+					if (mGrid[i].waterHeight > maxDepth) maxDepth = mGrid[i].waterHeight;
+				}
+
+				float maxVel = std::sqrt(maxSpeed2);
+				float waveSpeed = maxVel + std::sqrt(g * maxDepth);
+
+				float subDt;
+				if (waveSpeed > 1e-6f)
+					subDt = CFL_TARGET * cs / waveSpeed;
+				else
+					subDt = remaining;
+
+				subDt = std::min(subDt, remaining);
+				subDt = std::max(subDt, MIN_SUB_DT);
+
+				StepSWE(subDt);
+				remaining -= subDt;
+				++subCount;
+			}
+		}
+		mActualSubsteps = subCount;
+	}
 	auto simEnd = std::chrono::high_resolution_clock::now();
 	mSimTimeMs = std::chrono::duration<float, std::milli>(simEnd - simStart).count();
 
@@ -802,8 +940,16 @@ String WulfNetWaterV5Base::GetStatusString() const
 	    << " (volume units)\n";
 	oss << "Max depth: " << std::setprecision(3) << maxDepth << " m\n";
 	oss << "Max velocity: " << std::setprecision(2) << maxVel << " m/s\n";
-	oss << "Substeps: " << mConfig.substeps << "\n";
-	oss << "Sim: " << std::setprecision(2) << mSimTimeMs << " ms";
+
+	// CFL number for display (wave speed * dt / dx)
+	float waveSpeed = maxVel + std::sqrt(mConfig.gravity * maxDepth);
+	float cflNum = (waveSpeed > 0.0f && mActualSubsteps > 0)
+	             ? waveSpeed * (mFrameTimeMs * 0.001f / mActualSubsteps) / mConfig.cellSize
+	             : 0.0f;
+	oss << "Substeps: " << mActualSubsteps << " (adaptive CFL)\n";
+	oss << "CFL: " << std::setprecision(2) << cflNum << "\n";
+	oss << "Sim: " << std::setprecision(2) << mSimTimeMs << " ms"
+	    << (mGPUEnabled ? " [GPU]" : " [CPU]");
 
 	return String(oss.str());
 }

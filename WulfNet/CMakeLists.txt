@@ -48,6 +48,7 @@ set(WULFNET_SOURCES
     Compute/Memory/ComputeBuffer.cpp
     Compute/Shaders/ComputePipeline.cpp
     Compute/Fluids/VulkanFluidCompute.cpp
+    Compute/Fluids/SWEComputeGPU.cpp
     Compute/Reduction/ParallelReduction.cpp
 
     # Procedural - IFS
@@ -115,6 +116,7 @@ set(WULFNET_HEADERS
     Compute/Memory/ComputeBuffer.h
     Compute/Shaders/ComputePipeline.h
     Compute/Fluids/VulkanFluidCompute.h
+    Compute/Fluids/SWEComputeGPU.h
     Compute/Reduction/ParallelReduction.h
 
     # Procedural - IFS
@@ -169,13 +171,25 @@ target_include_directories(WulfNet
 target_link_libraries(WulfNet PUBLIC Jolt)
 
 # Find and link OpenMP for CPU parallelization
+# MSVC: OpenMP support requires /openmp flag. Using /openmp:llvm for full
+# OpenMP 3.1+ support (min/max reductions, etc). Without this, find_package
+# silently fails, making ALL #pragma omp directives no-ops (single-threaded).
+if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp:llvm")
+endif()
 find_package(OpenMP QUIET)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(WulfNet PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(WulfNet PRIVATE WULFNET_HAS_OPENMP)
     message(STATUS "  OpenMP found: CPU parallelization enabled")
 else()
-    message(STATUS "  OpenMP not found: CPU parallelization will be disabled")
+    # Manual fallback for MSVC — /openmp is already set above, just define the macro
+    if(MSVC)
+        target_compile_definitions(WulfNet PRIVATE WULFNET_HAS_OPENMP)
+        message(STATUS "  OpenMP: MSVC /openmp flag set manually — CPU parallelization enabled")
+    else()
+        message(STATUS "  OpenMP not found: CPU parallelization will be disabled")
+    endif()
 endif()
 
 # Find and link Vulkan for GPU compute

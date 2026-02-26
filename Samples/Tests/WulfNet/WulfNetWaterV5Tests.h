@@ -22,10 +22,12 @@
 #include <Tests/Test.h>
 #include <WulfNet/Core/System/SystemMonitor.h>
 #include <WulfNet/Core/Math/PerlinNoise.h>
+#include <WulfNet/Compute/Fluids/SWEComputeGPU.h>
 
 #include <vector>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 
 // ===========================================================================
 // Water cell — one column in the 2D grid
@@ -64,6 +66,9 @@ struct SheetWaterConfig
 	Color    shallowColor     = Color(120, 200, 240, 100);  // Transparent light blue
 	Color    deepColor        = Color(20, 60, 160, 230);     // Opaque dark blue
 	float    depthColorScale  = 1.0f;   // Depth at which colour is fully "deep"
+
+	// GPU acceleration
+	bool     useGPU            = true;   // Attempt GPU compute for SWE solver
 
 	// Perlin noise ripple settings
 	bool     noiseEnabled      = true;   // Enable noise-driven micro-ripples
@@ -132,6 +137,7 @@ protected:
 	float mStatsTimer   = 0.0f;
 	float mSimTimeMs    = 0.0f;
 	float mTotalWater   = 0.0f;  // Sum of all water heights (conservation check)
+	uint32_t mActualSubsteps = 0; // Adaptive CFL substep count from last frame
 	std::chrono::high_resolution_clock::time_point mLastFPSTime;
 
 	// ---- Perlin noise for ripple effects ----
@@ -140,6 +146,14 @@ protected:
 
 	// ---- Transport outflow buffer (persistent — avoids per-frame allocation) ----
 	std::vector<float> mOutflowBuf;  // 4 floats per cell: [Left, Right, Back, Front]
+
+	// ---- Perlin noise interpolation buffers (persistent — avoids per-substep allocation) ----
+	std::vector<float> mNoiseBufVx;
+	std::vector<float> mNoiseBufVz;
+
+	// ---- GPU compute acceleration ----
+	std::unique_ptr<WulfNet::SWEComputeGPU> mGPUCompute;
+	bool mGPUEnabled = false;
 
 private:
 	// ---- Solver ----

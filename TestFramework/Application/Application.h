@@ -74,6 +74,9 @@ protected:
 	/// Set the frequency at which we want to render frames
 	void						SetRenderFrequency(float inFrequency)			{ mRequestedDeltaTime = 1.0f / inFrequency; }
 
+	/// Unlock frame rate — render as fast as possible (variable timestep path)
+	void						UnlockFrameRate()								{ mRequestedDeltaTime = 0.0f; }
+
 	/// Will restore camera position to that returned by GetInitialCamera
 	void						ResetCamera();
 

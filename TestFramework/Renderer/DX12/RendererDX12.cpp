@@ -133,6 +133,17 @@ void RendererDX12::Initialize(ApplicationWindow *inWindow)
 	IDXGIFactory4 *factory = GetDXGIFactory();
 	FatalErrorIfFailed(factory->MakeWindowAssociation(static_cast<ApplicationWindowWin *>(mWindow)->GetWindowHandle(), DXGI_MWA_NO_ALT_ENTER));
 
+	// Check for tearing support (required to truly disable VSync with flip model)
+	{
+		ComPtr<IDXGIFactory5> factory5;
+		if (SUCCEEDED(factory->QueryInterface(IID_PPV_ARGS(&factory5))))
+		{
+			BOOL allowTearing = FALSE;
+			if (SUCCEEDED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing))))
+				mTearingSupported = (allowTearing == TRUE);
+		}
+	}
+
 	// Create heaps
 	ID3D12Device *device = GetDevice();
 	mRTVHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 2);
@@ -161,6 +172,8 @@ void RendererDX12::Initialize(ApplicationWindow *inWindow)
 	swap_chain_desc.OutputWindow = static_cast<ApplicationWindowWin *>(mWindow)->GetWindowHandle();
 	swap_chain_desc.SampleDesc.Count = 1;
 	swap_chain_desc.Windowed = TRUE;
+	if (mTearingSupported)
+		swap_chain_desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 	ComPtr<IDXGISwapChain> swap_chain;
 	FatalErrorIfFailed(factory->CreateSwapChain(mCommandQueue.Get(), &swap_chain_desc, &swap_chain));
@@ -293,7 +306,9 @@ void RendererDX12::OnWindowResize()
 	}
 
 	// Resize the swap chain buffers
-	FatalErrorIfFailed(mSwapChain->ResizeBuffers(cFrameCount, mWindow->GetWindowWidth(), mWindow->GetWindowHeight(), DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+	DXGI_SWAP_CHAIN_DESC scDesc = {};
+	mSwapChain->GetDesc(&scDesc);
+	FatalErrorIfFailed(mSwapChain->ResizeBuffers(cFrameCount, mWindow->GetWindowWidth(), mWindow->GetWindowHeight(), DXGI_FORMAT_R8G8B8A8_UNORM, scDesc.Flags));
 
 	// Back buffer index may have changed after the resize (it always seems to go to 0 again)
 	mFrameIndex = mSwapChain->GetCurrentBackBufferIndex();
@@ -413,8 +428,19 @@ void RendererDX12::EndFrame()
 	ID3D12CommandList* command_lists[] = { mCommandList.Get() };
 	mCommandQueue->ExecuteCommandLists((UINT)std::size(command_lists), command_lists);
 
-	// Present the frame
-	FatalErrorIfFailed(mSwapChain->Present(1, 0));
+	// Present the frame — SyncInterval=0 + ALLOW_TEARING truly disables VSync
+	// Note: DXGI_PRESENT_ALLOW_TEARING is only valid when NOT in exclusive fullscreen
+	UINT presentFlags = 0;
+	if (mTearingSupported)
+	{
+		BOOL isFullscreen = FALSE;
+		mSwapChain->GetFullscreenState(&isFullscreen, nullptr);
+		if (!isFullscreen)
+			presentFlags = DXGI_PRESENT_ALLOW_TEARING;
+	}
+	HRESULT hr = mSwapChain->Present(0, presentFlags);
+	if (FAILED(hr) && hr != DXGI_ERROR_WAS_STILL_DRAWING)
+		FatalErrorIfFailed(hr);
 
 	// Schedule a Signal command in the queue
 	UINT64 current_fence_value = mFenceValues[mFrameIndex];

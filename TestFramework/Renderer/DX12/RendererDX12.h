@@ -100,4 +100,5 @@ private:
 	ResourceCache					mDelayCached[cFrameCount];			///< List of reusable ID3D12Resources that are potentially referenced by the GPU so can be used only when the GPU finishes
 	Array<ComPtr<ID3D12Object>>		mDelayReleased[cFrameCount];		///< Objects that are potentially referenced by the GPU so can only be freed when the GPU finishes
 	bool							mIsExiting = false;					///< When exiting we don't want to add references too buffers
+	bool							mTearingSupported = false;			///< Whether DXGI_PRESENT_ALLOW_TEARING is supported (required to truly disable VSync)
 };

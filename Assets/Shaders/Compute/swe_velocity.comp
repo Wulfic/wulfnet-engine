@@ -1,0 +1,85 @@
+// =============================================================================
+// WulfNet Engine - SWE Velocity Update Compute Shader
+// =============================================================================
+// Phase 1: Compute flux-driven velocity update for shallow water equations.
+// Each cell reads its 4 neighbours from a read-only snapshot and writes
+// only its own velocity (vx, vz).  Boundary cells are zeroed.
+//
+// Compile: glslc -fshader-stage=compute swe_velocity.comp -o swe_velocity.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// WaterCell: .x=waterHeight, .y=terrainHeight, .z=vx, .w=vz  (16 bytes)
+layout(std430, binding = 0) buffer GridBuffer   { vec4 grid[];     };
+layout(std430, binding = 1) readonly buffer SnapBuffer { vec4 snapshot[]; };
+
+layout(push_constant) uniform SWEParams {
+    uint  gridSizeX;
+    uint  gridSizeZ;
+    float gravity_over_cs;   // g / cellSize  (precomputed)
+    float damping;           // 1.0 - config.damping
+    float viscosity;
+    float dt;
+    float _pad0;
+    float _pad1;
+} params;
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint z = gl_GlobalInvocationID.y;
+
+    if (x >= params.gridSizeX || z >= params.gridSizeZ)
+        return;
+
+    uint idx = z * params.gridSizeX + x;
+
+    // Boundary cells: zero velocity
+    if (x == 0 || x >= params.gridSizeX - 1 || z == 0 || z >= params.gridSizeZ - 1)
+    {
+        grid[idx].z = 0.0;
+        grid[idx].w = 0.0;
+        return;
+    }
+
+    vec4 src = snapshot[idx];
+    float h = src.x;   // waterHeight
+
+    if (h < 1e-6)
+    {
+        grid[idx].z = 0.0;
+        grid[idx].w = 0.0;
+        return;
+    }
+
+    float surfH = src.y + h;   // terrainHeight + waterHeight
+
+    // Read 4 neighbours from snapshot (read-only — no data race)
+    vec4 nL = snapshot[idx - 1];
+    vec4 nR = snapshot[idx + 1];
+    vec4 nB = snapshot[idx - params.gridSizeX];
+    vec4 nF = snapshot[idx + params.gridSizeX];
+
+    float fluxL = params.gravity_over_cs * (surfH - (nL.y + nL.x));
+    float fluxR = params.gravity_over_cs * (surfH - (nR.y + nR.x));
+    float fluxB = params.gravity_over_cs * (surfH - (nB.y + nB.x));
+    float fluxF = params.gravity_over_cs * (surfH - (nF.y + nF.x));
+
+    float newVx = (src.z + (fluxR - fluxL) * 0.5 * params.dt) * params.damping;
+    float newVz = (src.w + (fluxF - fluxB) * 0.5 * params.dt) * params.damping;
+
+    // Viscosity: blend toward neighbour average (Laplacian smoothing)
+    if (params.viscosity > 0.0)
+    {
+        float avgVx = (nL.z + nR.z + nB.z + nF.z) * 0.25;
+        float avgVz = (nL.w + nR.w + nB.w + nF.w) * 0.25;
+        newVx += params.viscosity * (avgVx - newVx);
+        newVz += params.viscosity * (avgVz - newVz);
+    }
+
+    grid[idx].z = newVx;
+    grid[idx].w = newVz;
+}

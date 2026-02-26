@@ -1,0 +1,66 @@
+// =============================================================================
+// WulfNet Engine - SWE Gather Compute Shader
+// =============================================================================
+// Phase 2, Pass 2: Each cell gathers inflow from its 4 neighbours' outflow
+// vectors and updates its waterHeight.
+//
+// Compile: glslc -fshader-stage=compute swe_gather.comp -o swe_gather.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// WaterCell: .x=waterHeight, .y=terrainHeight, .z=vx, .w=vz
+layout(std430, binding = 0) buffer GridBuffer   { vec4 grid[];     };
+layout(std430, binding = 1) readonly buffer SnapBuffer  { vec4 snapshot[]; };
+layout(std430, binding = 2) readonly buffer OutflowBuf  { vec4 outflow[];  };
+
+layout(push_constant) uniform SWEParams {
+    uint  gridSizeX;
+    uint  gridSizeZ;
+    float gravity_over_cs;
+    float damping;
+    float viscosity;
+    float dt;
+    float _pad0;
+    float _pad1;
+} params;
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint z = gl_GlobalInvocationID.y;
+
+    if (x >= params.gridSizeX || z >= params.gridSizeZ)
+        return;
+
+    uint idx = z * params.gridSizeX + x;
+
+    // Skip boundary — will be handled by boundary shader
+    if (x == 0 || x >= params.gridSizeX - 1 || z == 0 || z >= params.gridSizeZ - 1)
+        return;
+
+    vec4 src  = snapshot[idx];
+    vec4 self = outflow[idx];  // .x=L .y=R .z=B .w=F
+
+    // Water we lose
+    float lost = self.x + self.y + self.z + self.w;
+
+    // Water we gain from neighbours
+    float gained = 0.0;
+
+    // Left neighbour's Right outflow  → flows into us
+    gained += outflow[idx - 1].y;
+    // Right neighbour's Left outflow  → flows into us
+    gained += outflow[idx + 1].x;
+    // Back neighbour's Front outflow  → flows into us
+    gained += outflow[idx - params.gridSizeX].w;
+    // Front neighbour's Back outflow  → flows into us
+    gained += outflow[idx + params.gridSizeX].z;
+
+    float newWater = max(src.x - lost + gained, 0.0);
+
+    // Write updated waterHeight (keep terrain, velocity from Phase 1)
+    grid[idx].x = newWater;
+}

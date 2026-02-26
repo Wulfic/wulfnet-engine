@@ -1,0 +1,84 @@
+// =============================================================================
+// WulfNet Engine - SWE Outflow Compute Shader
+// =============================================================================
+// Phase 2, Pass 1: Compute per-cell directional outflows based on surface
+// height differences.  Each cell writes only its own 4 outflow values
+// [Left, Right, Back, Front], so no atomics are needed.
+//
+// Compile: glslc -fshader-stage=compute swe_outflow.comp -o swe_outflow.spv
+// =============================================================================
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// WaterCell: .x=waterHeight, .y=terrainHeight, .z=vx, .w=vz
+layout(std430, binding = 0) readonly buffer SnapBuffer   { vec4 snapshot[]; };
+layout(std430, binding = 1) writeonly buffer OutflowBuf  { vec4 outflow[];  };
+
+layout(push_constant) uniform SWEParams {
+    uint  gridSizeX;
+    uint  gridSizeZ;
+    float gravity_over_cs;
+    float damping;
+    float viscosity;
+    float dt;
+    float _pad0;
+    float _pad1;
+} params;
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint z = gl_GlobalInvocationID.y;
+
+    if (x >= params.gridSizeX || z >= params.gridSizeZ)
+        return;
+
+    uint idx = z * params.gridSizeX + x;
+
+    // Boundary or dry cells: zero outflow
+    if (x == 0 || x >= params.gridSizeX - 1 || z == 0 || z >= params.gridSizeZ - 1)
+    {
+        outflow[idx] = vec4(0.0);
+        return;
+    }
+
+    vec4 src = snapshot[idx];
+    if (src.x < 1e-6)
+    {
+        outflow[idx] = vec4(0.0);
+        return;
+    }
+
+    float surfH = src.y + src.x;
+
+    float outL = 0.0, outR = 0.0, outB = 0.0, outF = 0.0;
+    float totalOut = 0.0;
+
+    float dh;
+
+    dh = surfH - (snapshot[idx - 1].y + snapshot[idx - 1].x);
+    if (dh > 0.0) { outL = dh * 0.25; totalOut += outL; }
+
+    dh = surfH - (snapshot[idx + 1].y + snapshot[idx + 1].x);
+    if (dh > 0.0) { outR = dh * 0.25; totalOut += outR; }
+
+    dh = surfH - (snapshot[idx - params.gridSizeX].y + snapshot[idx - params.gridSizeX].x);
+    if (dh > 0.0) { outB = dh * 0.25; totalOut += outB; }
+
+    dh = surfH - (snapshot[idx + params.gridSizeX].y + snapshot[idx + params.gridSizeX].x);
+    if (dh > 0.0) { outF = dh * 0.25; totalOut += outF; }
+
+    // Clamp to available water
+    if (totalOut > src.x)
+    {
+        float scale = src.x / totalOut;
+        outL *= scale;
+        outR *= scale;
+        outB *= scale;
+        outF *= scale;
+    }
+
+    outflow[idx] = vec4(outL, outR, outB, outF);
+}

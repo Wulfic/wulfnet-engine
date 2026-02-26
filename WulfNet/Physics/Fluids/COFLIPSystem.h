@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 #include <vector>
 #include <memory>
 #include <functional>
@@ -214,15 +215,56 @@ private:
     void InterpolateDivergenceFreeQuadratic(float x, float y, float z, float& vx, float& vy, float& vz) const;
     void InterpolateVelocityGradient(float x, float y, float z, float grad[9]) const;
 
-    // B-spline basis functions for high-order interpolation
-    float BSpline(float x) const;
-    float BSplineDerivative(float x) const;
+    // B-spline basis functions — inlined for hot-path performance.
+    // Called millions of times per frame in P2G/G2P; must be inlineable
+    // across translation units (COFLIPSystemCPU.cpp, COFLIPSystemInterp.cpp).
+    static __forceinline float BSpline(float x) {
+        float ax = std::abs(x);
+        if (ax < 1.0f) {
+            return 0.5f * ax * ax * ax - ax * ax + 2.0f / 3.0f;
+        } else if (ax < 2.0f) {
+            float t = 2.0f - ax;
+            return t * t * t / 6.0f;
+        }
+        return 0.0f;
+    }
 
-    // Grid helpers
-    int GridIndex(int i, int j, int k) const;
-    void WorldToGrid(float wx, float wy, float wz, float& gx, float& gy, float& gz) const;
-    void GridToWorld(float gx, float gy, float gz, float& wx, float& wy, float& wz) const;
-    bool InBounds(int i, int j, int k) const;
+    static __forceinline float BSplineDerivative(float x) {
+        float ax = std::abs(x);
+        float sign = (x >= 0) ? 1.0f : -1.0f;
+        if (ax < 1.0f) {
+            return sign * (1.5f * ax * ax - 2.0f * ax);
+        } else if (ax < 2.0f) {
+            float t = 2.0f - ax;
+            return -sign * 0.5f * t * t;
+        }
+        return 0.0f;
+    }
+
+    // Grid helpers — inlined for zero-overhead access in inner loops.
+    __forceinline int GridIndex(int i, int j, int k) const {
+        return i + j * static_cast<int>(m_config.gridSizeX)
+                 + k * static_cast<int>(m_config.gridSizeX) * static_cast<int>(m_config.gridSizeY);
+    }
+
+    __forceinline void WorldToGrid(float wx, float wy, float wz, float& gx, float& gy, float& gz) const {
+        float invCs = 1.0f / m_config.cellSize;
+        gx = wx * invCs;
+        gy = wy * invCs;
+        gz = wz * invCs;
+    }
+
+    __forceinline void GridToWorld(float gx, float gy, float gz, float& wx, float& wy, float& wz) const {
+        wx = gx * m_config.cellSize;
+        wy = gy * m_config.cellSize;
+        wz = gz * m_config.cellSize;
+    }
+
+    __forceinline bool InBounds(int i, int j, int k) const {
+        return i >= 0 && i < static_cast<int>(m_config.gridSizeX) &&
+               j >= 0 && j < static_cast<int>(m_config.gridSizeY) &&
+               k >= 0 && k < static_cast<int>(m_config.gridSizeZ);
+    }
 
     // Energy/circulation computation (for monitoring conservation)
     float ComputeKineticEnergy() const;
@@ -271,6 +313,8 @@ private:
     std::vector<uint32_t> m_cellCount;              // Per-cell particle count
     std::vector<uint32_t> m_cellStart;              // Prefix sum: first particle index per cell
     std::vector<COFLIPParticle> m_sortedParticles;  // Particles in cell-sorted order
+    std::vector<uint32_t> m_particleCellIdx;        // Cached cell index per particle (avoids recompute in scatter)
+    std::vector<uint32_t> m_sortCountBuf;           // Thread-local count arrays for parallel counting sort
 
     // Emitter data
     struct Emitter {

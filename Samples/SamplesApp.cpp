@@ -555,11 +555,11 @@ static constexpr uint cMaxContactConstraints = 20480;
 SamplesApp::SamplesApp(const String &inCommandLine) :
 	Application("Jolt Physics Samples", inCommandLine)
 {
-	// Limit the render frequency to our simulation frequency so we don't play back the simulation too fast
-	// Note that if the simulation frequency > vsync frequency the simulation will slow down as we want
-	// to visualize every simulation step. When the simulation frequency is lower than the vsync frequency
-	// we will not render a new frame every frame as we want to show the result of the sim and not an interpolated version.
-	SetRenderFrequency(mUpdateFrequency);
+	// Unlock rendering — use variable timestep so every frame processes physics.
+	// Physics still uses fixed dt internally (1/mUpdateFrequency) but now runs
+	// every rendered frame instead of being gated by the accumulator.
+	// This shows true per-frame performance in the FPS counter.
+	UnlockFrameRate();
 
 	// Allocate temp memory
 #ifdef JPH_DISABLE_TEMP_ALLOCATOR
@@ -634,7 +634,7 @@ SamplesApp::SamplesApp(const String &inCommandLine) :
 			UIElement *phys_settings = mDebugUI->CreateMenu();
 			mDebugUI->CreateSlider(phys_settings, "Max Concurrent Jobs", float(mMaxConcurrentJobs), 1, float(thread::hardware_concurrency()), 1, [this](float inValue) { mMaxConcurrentJobs = (int)inValue; });
 			mDebugUI->CreateSlider(phys_settings, "Gravity (m/s^2)", -mPhysicsSystem->GetGravity().GetY(), 0.0f, 20.0f, 1.0f, [this](float inValue) { mPhysicsSystem->SetGravity(Vec3(0, -inValue, 0)); });
-			mDebugUI->CreateSlider(phys_settings, "Update Frequency (Hz)", mUpdateFrequency, 7.5f, 300.0f, 2.5f, [this](float inValue) { mUpdateFrequency = inValue; SetRenderFrequency(mUpdateFrequency); });
+			mDebugUI->CreateSlider(phys_settings, "Update Frequency (Hz)", mUpdateFrequency, 7.5f, 300.0f, 2.5f, [this](float inValue) { mUpdateFrequency = inValue; });
 			mDebugUI->CreateSlider(phys_settings, "Num Collision Steps", float(mCollisionSteps), 1.0f, 4.0f, 1.0f, [this](float inValue) { mCollisionSteps = int(inValue); });
 			mDebugUI->CreateSlider(phys_settings, "Num Velocity Steps", float(mPhysicsSettings.mNumVelocitySteps), 0, 30, 1, [this](float inValue) { mPhysicsSettings.mNumVelocitySteps = int(round(inValue)); mPhysicsSystem->SetPhysicsSettings(mPhysicsSettings); });
 			mDebugUI->CreateSlider(phys_settings, "Num Position Steps", float(mPhysicsSettings.mNumPositionSteps), 0, 30, 1, [this](float inValue) { mPhysicsSettings.mNumPositionSteps = int(round(inValue)); mPhysicsSystem->SetPhysicsSettings(mPhysicsSettings); });
