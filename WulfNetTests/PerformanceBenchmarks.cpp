@@ -31,7 +31,6 @@
 
 // Physics
 #include <WulfNet/Physics/MPM/ConstitutiveModel.h>
-#include <WulfNet/Physics/Fluids/FluidGrid.h>
 #include <WulfNet/Physics/Gaseous/GaseousSystem.h>
 #include <WulfNet/Physics/Destruction/DestructionSystem.h>
 
@@ -589,30 +588,6 @@ static void Bench_SVD3x3() {
     BENCH_EXPECT_THROUGHPUT_GT(r, 50000.0);
 }
 
-static void Bench_FluidGrid_Interpolate() {
-    FluidGrid grid;
-    grid.Initialize(32, 32, 32, 0.1f);
-
-    // Set some velocities so interpolation does real work
-    for (uint32_t k = 0; k < 32; ++k) {
-        for (uint32_t j = 0; j < 32; ++j) {
-            for (uint32_t i = 0; i < 32; ++i) {
-                auto& cell = grid.GetCell(i, j, k);
-                cell.u = static_cast<float>(i) * 0.01f;
-                cell.v = static_cast<float>(j) * 0.01f;
-                cell.w = static_cast<float>(k) * 0.01f;
-            }
-        }
-    }
-
-    float vx, vy, vz;
-    auto r = BENCHMARK_N("FluidGrid_Interpolate_32cubed", 50000, {
-        grid.InterpolateVelocity(1.5f, 1.5f, 1.5f, vx, vy, vz);
-    });
-    (void)vx; (void)vy; (void)vz;
-    BENCH_EXPECT_THROUGHPUT_GT(r, 100000.0);
-}
-
 static void Bench_GaseousSystem_Step() {
     GaseousSystemConfig cfg;
     cfg.resolutionX = 16;
@@ -774,7 +749,6 @@ void RegisterPerformanceBenchmarks() {
     RUN_TEST("BENCH_MPM_DruckerPrager_Stress", Bench_ConstitutiveModel_DruckerPrager);
     RUN_TEST("BENCH_MPM_Snow_Stress", Bench_ConstitutiveModel_Snow);
     RUN_TEST("BENCH_MPM_SVD3x3", Bench_SVD3x3);
-    RUN_TEST("BENCH_FluidGrid_Interpolate", Bench_FluidGrid_Interpolate);
     RUN_TEST("BENCH_GaseousSystem_Step", Bench_GaseousSystem_Step);
     RUN_TEST("BENCH_GaseousSystem_SampleDensity", Bench_GaseousSystem_SampleDensity);
     RUN_TEST("BENCH_Destruction_GenBoxPattern", Bench_Destruction_GenerateBoxPattern);

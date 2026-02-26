@@ -160,6 +160,7 @@ private:
 
     // Density grid
     std::vector<float> m_density;
+    std::vector<float> m_smoothTemp;  // Persistent temp buffer for SmoothDensity
     uint32_t m_gridTotalCells = 0;
 
     // Output mesh

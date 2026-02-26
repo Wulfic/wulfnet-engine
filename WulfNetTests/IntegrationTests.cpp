@@ -9,9 +9,6 @@
 #include <WulfNet/WulfNet.h>
 #include <WulfNet/Physics/Fluids/COFLIPSystem.h>
 #include <WulfNet/Physics/Fluids/FluidSurface.h>
-#include <WulfNet/Physics/Fluids/FluidSystem.h>
-#include <WulfNet/Physics/Fluids/FluidParticle.h>
-#include <WulfNet/Physics/Fluids/FluidGrid.h>
 #include <WulfNet/Procedural/IFS/AffineTransform.h>
 #include <WulfNet/Procedural/IFS/TransformPresets.h>
 #include <WulfNet/Procedural/IFS/TransformBlender.h>
@@ -268,95 +265,6 @@ void test_Integration_SystemMonitorDuringPhysics() {
 }
 
 // =============================================================================
-// Fluid Grid Advanced Tests
-// =============================================================================
-
-void test_FluidGrid_TrilinearInterpolation() {
-    FluidGrid grid;
-    grid.Initialize(8, 8, 8, 1.0f);
-    grid.SetBounds(0.0f, 0.0f, 0.0f, 8.0f, 8.0f, 8.0f);
-    grid.Reset();
-
-    // Set known velocity field: u = x (linear in x)
-    for (uint32_t k = 0; k < 8; k++) {
-        for (uint32_t j = 0; j < 8; j++) {
-            for (uint32_t i = 0; i < 8; i++) {
-                MACCell& cell = grid.GetCell(i, j, k);
-                cell.u = static_cast<float>(i);
-                cell.v = static_cast<float>(j);
-                cell.w = static_cast<float>(k);
-            }
-        }
-    }
-
-    // Interpolate at grid point
-    float vx, vy, vz;
-    grid.InterpolateVelocity(3.0f, 3.0f, 3.0f, vx, vy, vz);
-
-    // At grid coordinates, should approximate the stored values
-    // Exact values depend on staggering, but should be reasonable
-    EXPECT_TRUE(std::isfinite(vx));
-    EXPECT_TRUE(std::isfinite(vy));
-    EXPECT_TRUE(std::isfinite(vz));
-}
-
-void test_FluidGrid_BoundsConversion() {
-    FluidGrid grid;
-    grid.Initialize(10, 20, 30, 0.5f);
-    grid.SetBounds(-5.0f, 0.0f, -15.0f, 5.0f, 10.0f, 15.0f);
-
-    // World to grid conversion
-    float gx, gy, gz;
-    grid.WorldToGrid(0.0f, 5.0f, 0.0f, gx, gy, gz);
-
-    // (0 - (-5)) / 0.5 = 10.0 for x, (5 - 0) / 0.5 = 10.0 for y, etc.
-    EXPECT_NEAR(gx, 10.0f, 0.5f);
-    EXPECT_NEAR(gy, 10.0f, 0.5f);
-    EXPECT_NEAR(gz, 30.0f, 0.5f);
-
-    // Grid to world conversion (round trip)
-    float wx, wy, wz;
-    grid.GridToWorld(gx, gy, gz, wx, wy, wz);
-    EXPECT_NEAR(wx, 0.0f, 0.1f);
-    EXPECT_NEAR(wy, 5.0f, 0.1f);
-    EXPECT_NEAR(wz, 0.0f, 0.1f);
-}
-
-void test_FluidGrid_CellIndexConversion() {
-    FluidGrid grid;
-    grid.Initialize(10, 20, 30, 0.5f);
-
-    // Forward conversion
-    uint32_t index = grid.GetIndex(3, 7, 15);
-
-    // Reverse conversion
-    uint32_t i, j, k;
-    grid.GetIJK(index, i, j, k);
-    EXPECT_EQ(i, 3u);
-    EXPECT_EQ(j, 7u);
-    EXPECT_EQ(k, 15u);
-}
-
-void test_FluidGrid_ResetClearsData() {
-    FluidGrid grid;
-    grid.Initialize(4, 4, 4, 1.0f);
-    grid.SetBounds(0, 0, 0, 4, 4, 4);
-
-    // Set some values
-    grid.GetCell(2, 2, 2).u = 5.0f;
-    grid.GetCell(2, 2, 2).pressure = 100.0f;
-    grid.GetCell(2, 2, 2).state = CellState::Fluid;
-
-    grid.Reset();
-
-    // Should be cleared
-    const MACCell& cell = grid.GetCell(2, 2, 2);
-    EXPECT_NEAR(cell.u, 0.0f, 1e-6f);
-    EXPECT_NEAR(cell.pressure, 0.0f, 1e-6f);
-    EXPECT_TRUE(cell.state == CellState::Empty);
-}
-
-// =============================================================================
 // Stress Tests
 // =============================================================================
 
@@ -563,12 +471,6 @@ void RegisterIntegrationTests() {
     RUN_TEST("Integration_RasterizerAndOcclusion", test_Integration_RasterizerAndOcclusion);
     RUN_TEST("Integration_FractalAndRasterizer", test_Integration_FractalAndRasterizer);
     RUN_TEST("Integration_SystemMonitorDuringPhysics", test_Integration_SystemMonitorDuringPhysics);
-
-    // Fluid Grid advanced
-    RUN_TEST("FluidGrid_TrilinearInterpolation", test_FluidGrid_TrilinearInterpolation);
-    RUN_TEST("FluidGrid_BoundsConversion", test_FluidGrid_BoundsConversion);
-    RUN_TEST("FluidGrid_CellIndexConversion", test_FluidGrid_CellIndexConversion);
-    RUN_TEST("FluidGrid_ResetClearsData", test_FluidGrid_ResetClearsData);
 
     // Stress tests
     RUN_TEST("Stress_FluidHighParticleCount", test_Stress_FluidHighParticleCount);

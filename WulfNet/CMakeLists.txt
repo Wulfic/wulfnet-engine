@@ -22,10 +22,6 @@ set(WULFNET_SOURCES
     # Physics Integration
     Physics/Integration/PhysicsWorld.cpp
 
-    # Physics - Fluids (MPM)
-    Physics/Fluids/FluidSystem.cpp
-    Physics/Fluids/FluidGrid.cpp
-
     # Physics - Fluids (CO-FLIP)
     Physics/Fluids/COFLIPSystem.cpp
     Physics/Fluids/FluidSurface.cpp
@@ -87,14 +83,10 @@ set(WULFNET_HEADERS
     Core/Logging/Logger.h
     Core/Profiling/Profiler.h
     Core/System/SystemMonitor.h
+    Core/Math/PerlinNoise.h
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.h
-
-    # Physics - Fluids (MPM)
-    Physics/Fluids/FluidParticle.h
-    Physics/Fluids/FluidGrid.h
-    Physics/Fluids/FluidSystem.h
 
     # Physics - Fluids (CO-FLIP)
     Physics/Fluids/COFLIPSystem.h

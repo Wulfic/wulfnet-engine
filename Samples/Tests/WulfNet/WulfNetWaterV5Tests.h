@@ -19,6 +19,7 @@
 
 #include <Tests/Test.h>
 #include <WulfNet/Core/System/SystemMonitor.h>
+#include <WulfNet/Core/Math/PerlinNoise.h>
 
 #include <vector>
 #include <chrono>
@@ -61,6 +62,16 @@ struct SheetWaterConfig
 	Color    shallowColor     = Color(120, 200, 240, 100);  // Transparent light blue
 	Color    deepColor        = Color(20, 60, 160, 230);     // Opaque dark blue
 	float    depthColorScale  = 1.0f;   // Depth at which colour is fully "deep"
+
+	// Perlin noise ripple settings
+	bool     noiseEnabled      = true;   // Enable noise-driven micro-ripples
+	float    noiseAmplitude    = 0.012f; // Visual surface displacement amplitude (metres)
+	float    noiseFrequency    = 3.0f;   // Spatial frequency of noise pattern
+	float    noiseSpeed        = 1.5f;   // How fast the noise pattern animates
+	int      noiseOctaves      = 3;      // fBm octave count (more = finer detail)
+	float    noiseLacunarity   = 2.2f;   // Frequency multiplier per octave
+	float    noisePersistence  = 0.45f;  // Amplitude falloff per octave
+	float    noiseVelStrength   = 0.08f;  // Velocity perturbation strength (drives actual flow)
 };
 
 // ===========================================================================
@@ -120,6 +131,10 @@ protected:
 	float mSimTimeMs    = 0.0f;
 	float mTotalWater   = 0.0f;  // Sum of all water heights (conservation check)
 	std::chrono::high_resolution_clock::time_point mLastFPSTime;
+
+	// ---- Perlin noise for ripple effects ----
+	WulfNet::PerlinNoise mNoise;   // Deterministic noise generator
+	float mNoiseTime = 0.0f;       // Accumulated time for noise animation
 
 private:
 	// ---- Solver ----

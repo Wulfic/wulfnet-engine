@@ -28,6 +28,7 @@
 #include "Core/Logging/Logger.h"
 #include "Core/Profiling/Profiler.h"
 #include "Core/System/SystemMonitor.h"
+#include "Core/Math/PerlinNoise.h"
 
 // =============================================================================
 // Physics Systems
@@ -35,10 +36,7 @@
 
 #include "Physics/Integration/PhysicsWorld.h"
 
-// Physics - Fluids
-#include "Physics/Fluids/FluidParticle.h"
-#include "Physics/Fluids/FluidGrid.h"
-#include "Physics/Fluids/FluidSystem.h"
+// Physics - Fluids (CO-FLIP)
 #include "Physics/Fluids/COFLIPSystem.h"
 #include "Physics/Fluids/FluidSurface.h"
 

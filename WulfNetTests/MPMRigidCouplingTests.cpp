@@ -7,7 +7,6 @@
 #include "TestHarness.h"
 #include "WulfNet/Physics/MPM/MPMRigidCoupling.h"
 #include "WulfNet/Physics/MPM/ConstitutiveModel.h"
-#include "WulfNet/Physics/Fluids/FluidParticle.h"
 #include <cmath>
 
 using namespace WulfNet;

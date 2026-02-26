@@ -56,9 +56,6 @@
 #include <Tests/WulfNet/WulfNetFluidTest.h>
 #include <Tests/WulfNet/WulfNetPhysicsTests.h>
 #include <Tests/WulfNet/WulfNetAdvancedTests.h>
-#include <Tests/WulfNet/WulfNetWaterV2Tests.h>
-#include <Tests/WulfNet/WulfNetWaterV3Tests.h>
-#include <Tests/WulfNet/WulfNetWaterV4Tests.h>
 #include <Tests/WulfNet/WulfNetWaterV5Tests.h>
 
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
@@ -469,28 +466,6 @@ JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetTerrainVisualTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetVolumetricVisualTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetAudioVisualTest)
 
-// WulfNet Water V2 Tests (Particle Physics + MPM Coupling)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV2Base)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV2DamBreakTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV2MultiMaterialTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV2WavePoolTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV2ErosionTest)
-
-// WulfNet Water V3 Tests (MPM FluidSystem — particle IS the water)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3Base)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3OceanSwellTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3ViscousCascadeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3ThermalConvectionTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3SprayFoamTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3ObstacleCourseTest)
-
-// WulfNet Water V4 Tests (Elastic Ball Water — sphere + bridge rendering)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV4Base)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV4BallPoolTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV4ElasticCascadeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV4BallSplashTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV4BallWaterfallTest)
-
 // WulfNet Water V5 Tests (Sheet Water — Shallow Water Equations on a 2D height field)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5Base)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5RipplePondTest)
@@ -521,19 +496,6 @@ static TestNameAndRTTI sWulfNetTests[] =
 	{ "Terrain Deformation",				JPH_RTTI(WulfNetTerrainVisualTest) },
 	{ "Volumetric Clouds",					JPH_RTTI(WulfNetVolumetricVisualTest) },
 	{ "Spatial Audio & Acoustics",			JPH_RTTI(WulfNetAudioVisualTest) },
-	{ "Water V2: Dam Break (Particles)",	JPH_RTTI(WulfNetWaterV2DamBreakTest) },
-	{ "Water V2: Multi-Material",			JPH_RTTI(WulfNetWaterV2MultiMaterialTest) },
-	{ "Water V2: Wave Pool (Coupling)",		JPH_RTTI(WulfNetWaterV2WavePoolTest) },
-	{ "Water V2: Particle Erosion",			JPH_RTTI(WulfNetWaterV2ErosionTest) },
-	{ "Water V3: Ocean Swell",				JPH_RTTI(WulfNetWaterV3OceanSwellTest) },
-	{ "Water V3: Viscous Cascade",			JPH_RTTI(WulfNetWaterV3ViscousCascadeTest) },
-	{ "Water V3: Thermal Convection",		JPH_RTTI(WulfNetWaterV3ThermalConvectionTest) },
-	{ "Water V3: Spray & Foam",				JPH_RTTI(WulfNetWaterV3SprayFoamTest) },
-	{ "Water V3: Obstacle Course",			JPH_RTTI(WulfNetWaterV3ObstacleCourseTest) },
-	{ "Water V4: Ball Pool",				JPH_RTTI(WulfNetWaterV4BallPoolTest) },
-	{ "Water V4: Elastic Cascade",			JPH_RTTI(WulfNetWaterV4ElasticCascadeTest) },
-	{ "Water V4: Ball Splash",				JPH_RTTI(WulfNetWaterV4BallSplashTest) },
-	{ "Water V4: Ball Waterfall",			JPH_RTTI(WulfNetWaterV4BallWaterfallTest) },
 	{ "Water V5: Ripple Pond",				JPH_RTTI(WulfNetWaterV5RipplePondTest) },
 	{ "Water V5: Terrain Flow",				JPH_RTTI(WulfNetWaterV5TerrainFlowTest) },
 	{ "Water V5: Dam Break (Sheet)",		JPH_RTTI(WulfNetWaterV5DamBreakTest) },

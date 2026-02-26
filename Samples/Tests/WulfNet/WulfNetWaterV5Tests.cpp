@@ -16,6 +16,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <random>
 
@@ -262,128 +263,176 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 	const float cs    = mConfig.cellSize;
 	const float damp  = 1.0f - mConfig.damping;
 	const float visc  = mConfig.viscosity;
+	const uint32_t total = NX * NZ;
 
-	// Copy current state into temp buffer (used as read-only source)
-	mGridTemp = mGrid;
+	// Ensure temp buffer is correctly sized (reused across frames — no allocation)
+	if (mGridTemp.size() != total)
+		mGridTemp.resize(total);
 
-	// ---------- Phase 1: Compute flux and update water heights ----------
-	for (uint32_t z = 0; z < NZ; ++z)
+	// Snapshot current state into temp for read-only access during Phase 1.
+	// We use memcpy for POD data — significantly faster than vector assignment
+	// which invokes element-wise copy constructors.
+	std::memcpy(mGridTemp.data(), mGrid.data(), total * sizeof(WaterCell));
+
+	// ---------- Phase 1: Compute flux-driven velocity update ----------
+	// Interior cells only (1..NX-2, 1..NZ-2) — boundary is handled separately.
+	for (uint32_t z = 1; z + 1 < NZ; ++z)
 	{
-		for (uint32_t x = 0; x < NX; ++x)
+		const uint32_t rowOff = z * NX;
+		for (uint32_t x = 1; x + 1 < NX; ++x)
 		{
-			const WaterCell &src = mGridTemp[CellIndex(x, z)];
-			float surfH = src.terrainHeight + src.waterHeight;
+			const uint32_t idx = rowOff + x;
+			const WaterCell &src = mGridTemp[idx];
 			float h = src.waterHeight;
 
 			if (h < 1e-6f)
 			{
-				// Dry cell — zero velocity, no outflow
-				mGrid[CellIndex(x, z)].vx = 0.0f;
-				mGrid[CellIndex(x, z)].vz = 0.0f;
+				mGrid[idx].vx = 0.0f;
+				mGrid[idx].vz = 0.0f;
 				continue;
 			}
 
-			// Flux to each of 4 neighbours (positive = outflow)
-			float fluxL = 0, fluxR = 0, fluxB = 0, fluxF = 0;
+			float surfH = src.terrainHeight + h;
 
-			auto computeFlux = [&](int nx, int nz) -> float
-			{
-				if (nx < 0 || nx >= (int)NX || nz < 0 || nz >= (int)NZ)
-					return 0.0f;
-				const WaterCell &nb = mGridTemp[CellIndex(nx, nz)];
-				float nbSurf = nb.terrainHeight + nb.waterHeight;
-				float dh = surfH - nbSurf;
-				// Gravity-driven acceleration on flux
-				return g * dh / cs;
-			};
+			// Direct neighbour access (no bounds check needed — we skip edges)
+			const WaterCell &nL = mGridTemp[idx - 1];
+			const WaterCell &nR = mGridTemp[idx + 1];
+			const WaterCell &nB = mGridTemp[idx - NX];
+			const WaterCell &nF = mGridTemp[idx + NX];
 
-			fluxL = computeFlux(static_cast<int>(x) - 1, static_cast<int>(z));
-			fluxR = computeFlux(static_cast<int>(x) + 1, static_cast<int>(z));
-			fluxB = computeFlux(static_cast<int>(x),     static_cast<int>(z) - 1);
-			fluxF = computeFlux(static_cast<int>(x),     static_cast<int>(z) + 1);
+			float fluxL = g * (surfH - (nL.terrainHeight + nL.waterHeight)) / cs;
+			float fluxR = g * (surfH - (nR.terrainHeight + nR.waterHeight)) / cs;
+			float fluxB = g * (surfH - (nB.terrainHeight + nB.waterHeight)) / cs;
+			float fluxF = g * (surfH - (nF.terrainHeight + nF.waterHeight)) / cs;
 
-			// Accelerate velocities by flux, apply damping
 			float newVx = (src.vx + (fluxR - fluxL) * 0.5f * dt) * damp;
 			float newVz = (src.vz + (fluxF - fluxB) * 0.5f * dt) * damp;
 
-			// Viscosity: diffuse velocity towards neighbours' average
+			// Viscosity: blend toward neighbour average (Laplacian smoothing)
 			if (visc > 0.0f)
 			{
-				float avgVx = 0, avgVz = 0;
-				int count = 0;
-				auto addNb = [&](int nx, int nz)
-				{
-					if (nx >= 0 && nx < (int)NX && nz >= 0 && nz < (int)NZ)
-					{
-						const WaterCell &nb = mGridTemp[CellIndex(nx, nz)];
-						avgVx += nb.vx;
-						avgVz += nb.vz;
-						++count;
-					}
-				};
-				addNb((int)x - 1, (int)z);
-				addNb((int)x + 1, (int)z);
-				addNb((int)x, (int)z - 1);
-				addNb((int)x, (int)z + 1);
-				if (count > 0)
-				{
-					avgVx /= count;
-					avgVz /= count;
-					newVx += visc * (avgVx - newVx);
-					newVz += visc * (avgVz - newVz);
-				}
+				float avgVx = (nL.vx + nR.vx + nB.vx + nF.vx) * 0.25f;
+				float avgVz = (nL.vz + nR.vz + nB.vz + nF.vz) * 0.25f;
+				newVx += visc * (avgVx - newVx);
+				newVz += visc * (avgVz - newVz);
 			}
 
-			mGrid[CellIndex(x, z)].vx = newVx;
-			mGrid[CellIndex(x, z)].vz = newVz;
+			mGrid[idx].vx = newVx;
+			mGrid[idx].vz = newVz;
 		}
 	}
 
-	// ---------- Phase 2: Transport water by velocities (semi-Lagrangian) ----------
-	// We move water height from each cell towards the direction of velocity.
-	// This is done conservatively: compute net flux in/out.
-
-	// First, compute per-cell outflow volumes
-	// We use a simpler approach: for each cell, compute the volume that
-	// flows to neighbours and redistribute.
-
-	// Re-read the velocity-updated grid into temp
-	mGridTemp = mGrid;
-
-	for (uint32_t z = 0; z < NZ; ++z)
+	// Handle edge rows/columns: zero velocity for boundary cells
+	for (uint32_t x = 0; x < NX; ++x)
 	{
-		for (uint32_t x = 0; x < NX; ++x)
+		mGrid[x].vx = 0.0f;            mGrid[x].vz = 0.0f;
+		mGrid[(NZ - 1) * NX + x].vx = 0.0f; mGrid[(NZ - 1) * NX + x].vz = 0.0f;
+	}
+	for (uint32_t z = 1; z + 1 < NZ; ++z)
+	{
+		mGrid[z * NX].vx = 0.0f;         mGrid[z * NX].vz = 0.0f;
+		mGrid[z * NX + NX - 1].vx = 0.0f; mGrid[z * NX + NX - 1].vz = 0.0f;
+	}
+
+	// ---------- Phase 1.5: Perlin noise velocity perturbation ----------
+	if (mConfig.noiseEnabled && mConfig.noiseVelStrength > 0.0f)
+	{
+		const float freq  = mConfig.noiseFrequency;
+		const float speed = mConfig.noiseSpeed;
+		const float str   = mConfig.noiseVelStrength * dt;
+		const int   oct   = mConfig.noiseOctaves;
+		const float lac   = mConfig.noiseLacunarity;
+		const float per   = mConfig.noisePersistence;
+		const float t     = mNoiseTime;
+
+		constexpr uint32_t DS = 4;
+		uint32_t dsNX = (NX + DS - 1) / DS + 1;
+		uint32_t dsNZ = (NZ + DS - 1) / DS + 1;
+
+		std::vector<float> noiseBufVx(dsNX * dsNZ);
+		std::vector<float> noiseBufVz(dsNX * dsNZ);
+
+		for (uint32_t dz = 0; dz < dsNZ; ++dz)
 		{
-			const WaterCell &src = mGridTemp[CellIndex(x, z)];
+			float fz = static_cast<float>(dz * DS) * freq / NZ;
+			for (uint32_t dx = 0; dx < dsNX; ++dx)
+			{
+				float fx = static_cast<float>(dx * DS) * freq / NX;
+				uint32_t idx = dz * dsNX + dx;
+				noiseBufVx[idx] = mNoise.FBM3D(fx, fz, t * speed,
+				                                oct, lac, per, str, 1.0f);
+				noiseBufVz[idx] = mNoise.FBM3D(fx + 17.3f, fz + 31.7f, t * speed + 5.0f,
+				                                oct, lac, per, str, 1.0f);
+			}
+		}
+
+		float invDS = 1.0f / static_cast<float>(DS);
+		for (uint32_t z = 1; z + 1 < NZ; ++z)
+		{
+			float cz = static_cast<float>(z) * invDS;
+			uint32_t cz0 = static_cast<uint32_t>(cz);
+			uint32_t cz1 = std::min(cz0 + 1, dsNZ - 1);
+			float fz = cz - cz0;
+
+			for (uint32_t x = 1; x + 1 < NX; ++x)
+			{
+				WaterCell &cell = mGrid[CellIndex(x, z)];
+				if (cell.waterHeight < 1e-5f) continue;
+
+				float cx = static_cast<float>(x) * invDS;
+				uint32_t cx0 = static_cast<uint32_t>(cx);
+				uint32_t cx1 = std::min(cx0 + 1, dsNX - 1);
+				float fx = cx - cx0;
+
+				float nVx = (1-fx)*(1-fz) * noiseBufVx[cz0*dsNX+cx0]
+				          + fx*(1-fz)     * noiseBufVx[cz0*dsNX+cx1]
+				          + (1-fx)*fz     * noiseBufVx[cz1*dsNX+cx0]
+				          + fx*fz         * noiseBufVx[cz1*dsNX+cx1];
+
+				float nVz = (1-fx)*(1-fz) * noiseBufVz[cz0*dsNX+cx0]
+				          + fx*(1-fz)     * noiseBufVz[cz0*dsNX+cx1]
+				          + (1-fx)*fz     * noiseBufVz[cz1*dsNX+cx0]
+				          + fx*fz         * noiseBufVz[cz1*dsNX+cx1];
+
+				float depthScale = std::min(1.0f, cell.waterHeight * 10.0f);
+				cell.vx += nVx * depthScale;
+				cell.vz += nVz * depthScale;
+			}
+		}
+	}
+
+	// ---------- Phase 2: Conservative water transport ----------
+	// Snapshot the velocity-updated grid for stable reads during transport
+	std::memcpy(mGridTemp.data(), mGrid.data(), total * sizeof(WaterCell));
+
+	for (uint32_t z = 1; z + 1 < NZ; ++z)
+	{
+		const uint32_t rowOff = z * NX;
+		for (uint32_t x = 1; x + 1 < NX; ++x)
+		{
+			const uint32_t idx = rowOff + x;
+			const WaterCell &src = mGridTemp[idx];
 			if (src.waterHeight < 1e-6f) continue;
 
 			float surfH = src.terrainHeight + src.waterHeight;
 
-			// Compute outflow to each neighbour based on surface height difference
-			// Flux = max(0, surface_diff) * min(dt * g / cs, available_water/4)
-			float outflow[4] = { 0, 0, 0, 0 };
-			int dx[4] = { -1, 1, 0, 0 };
-			int dz[4] = { 0, 0, -1, 1 };
+			// Outflow to 4 neighbours based on surface height difference
+			float outflow[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			const uint32_t nbIdx[4] = { idx - 1, idx + 1, idx - NX, idx + NX };
 			float totalOut = 0.0f;
 
 			for (int d = 0; d < 4; ++d)
 			{
-				int nx = static_cast<int>(x) + dx[d];
-				int nz = static_cast<int>(z) + dz[d];
-				if (nx < 0 || nx >= (int)NX || nz < 0 || nz >= (int)NZ)
-					continue;
-
-				const WaterCell &nb = mGridTemp[CellIndex(nx, nz)];
-				float nbSurf = nb.terrainHeight + nb.waterHeight;
-				float dh = surfH - nbSurf;
+				const WaterCell &nb = mGridTemp[nbIdx[d]];
+				float dh = surfH - (nb.terrainHeight + nb.waterHeight);
 				if (dh > 0.0f)
 				{
-					outflow[d] = dh * 0.25f;  // Fraction of height diff per step
+					outflow[d] = dh * 0.25f;
 					totalOut += outflow[d];
 				}
 			}
 
-			// Clamp so we don't remove more water than exists
+			// Clamp to avoid removing more water than exists
 			if (totalOut > src.waterHeight)
 			{
 				float scale = src.waterHeight / totalOut;
@@ -392,15 +441,11 @@ void WulfNetWaterV5Base::StepSWE(float dt)
 				totalOut = src.waterHeight;
 			}
 
-			// Apply outflow: subtract from source, add to neighbours
-			mGrid[CellIndex(x, z)].waterHeight -= totalOut;
-
+			mGrid[idx].waterHeight -= totalOut;
 			for (int d = 0; d < 4; ++d)
 			{
-				if (outflow[d] <= 0.0f) continue;
-				int nx = static_cast<int>(x) + dx[d];
-				int nz = static_cast<int>(z) + dz[d];
-				mGrid[CellIndex(nx, nz)].waterHeight += outflow[d];
+				if (outflow[d] > 0.0f)
+					mGrid[nbIdx[d]].waterHeight += outflow[d];
 			}
 		}
 	}
@@ -462,6 +507,9 @@ void WulfNetWaterV5Base::PrePhysicsUpdate(const PreUpdateParams &inParams)
 	// Derived per-frame logic (adding drops, releasing dams, etc.)
 	UpdateScenario(inParams.mDeltaTime);
 
+	// Advance noise time for animated ripples
+	mNoiseTime += inParams.mDeltaTime;
+
 	// Step the SWE solver
 	auto simStart = std::chrono::high_resolution_clock::now();
 	float subDt = inParams.mDeltaTime / static_cast<float>(mConfig.substeps);
@@ -487,8 +535,9 @@ void WulfNetWaterV5Base::PrePhysicsUpdate(const PreUpdateParams &inParams)
 Color WulfNetWaterV5Base::DepthColor(float depth) const
 {
 	float t = std::min(1.0f, depth / mConfig.depthColorScale);
+	// Use a non-linear ramp: shallow water transitions faster to show depth
+	t = t * t * (3.0f - 2.0f * t); // smoothstep for perceptually nicer gradient
 
-	// Lerp shallow → deep
 	auto lerp = [](uint8_t a, uint8_t b, float t) -> uint8_t
 	{
 		return static_cast<uint8_t>(a + (b - a) * t);
@@ -522,7 +571,12 @@ void WulfNetWaterV5Base::DrawSheet()
 	if (maxDim > 250) { tS = 2; }
 	if (maxDim > 450) { tS = 3; wS = 2; }
 
-	// ---- Terrain mesh ----
+	// Directional light for shading (from upper-right, normalised)
+	const Vec3 lightDir = Vec3(0.4f, 0.8f, 0.3f).Normalized();
+	const float ambientTerrain = 0.35f;   // Minimum brightness for terrain
+	const float ambientWater   = 0.40f;   // Minimum brightness for water
+
+	// ---- Terrain mesh with normal-based lighting ----
 	for (uint32_t z = 0; z + tS < NZ; z += tS)
 	{
 		for (uint32_t x = 0; x + tS < NX; x += tS)
@@ -548,16 +602,52 @@ void WulfNetWaterV5Base::DrawSheet()
 			RVec3 t01(wx0, oy + c01.terrainHeight, wz1);
 			RVec3 t11(wx1, oy + c11.terrainHeight, wz1);
 
-			Color tCol = (maxWater > minH)
-				? Color(40, 90, 30, 255)
-				: Color(70, 140, 50, 255);
+			// Base terrain color varies with height for visual depth
+			float avgTerrainH = (c00.terrainHeight + c10.terrainHeight +
+			                     c01.terrainHeight + c11.terrainHeight) * 0.25f;
+			// Height-based color: low = dark earthy brown, high = bright green
+			float ht = std::min(1.0f, std::max(0.0f, avgTerrainH * 0.15f));
+			uint8_t tR, tG, tB;
+			if (maxWater > minH) {
+				// Submerged terrain: dark blue-green tint
+				tR = static_cast<uint8_t>(30  + ht * 15);
+				tG = static_cast<uint8_t>(60  + ht * 30);
+				tB = static_cast<uint8_t>(35  + ht * 15);
+			} else {
+				// Dry terrain: earthy green-brown with height variation
+				tR = static_cast<uint8_t>(55  + ht * 35);
+				tG = static_cast<uint8_t>(100 + ht * 60);
+				tB = static_cast<uint8_t>(35  + ht * 25);
+			}
 
-			mDebugRenderer->DrawTriangle(t00, t10, t01, tCol);
-			mDebugRenderer->DrawTriangle(t10, t11, t01, tCol);
+			// Compute face normals and apply directional lighting
+			// Triangle 1: t00, t10, t01
+			Vec3 e1_a = Vec3(t10 - t00);
+			Vec3 e2_a = Vec3(t01 - t00);
+			Vec3 n1 = e1_a.Cross(e2_a);
+			if (n1.LengthSq() > 1e-12f) n1 = n1.Normalized();
+			float shade1 = ambientTerrain + (1.0f - ambientTerrain) * std::max(0.0f, n1.Dot(lightDir));
+
+			// Triangle 2: t10, t11, t01
+			Vec3 e1_b = Vec3(t11 - t10);
+			Vec3 e2_b = Vec3(t01 - t10);
+			Vec3 n2 = e1_b.Cross(e2_b);
+			if (n2.LengthSq() > 1e-12f) n2 = n2.Normalized();
+			float shade2 = ambientTerrain + (1.0f - ambientTerrain) * std::max(0.0f, n2.Dot(lightDir));
+
+			Color tCol1(static_cast<uint8_t>(tR * shade1),
+			            static_cast<uint8_t>(tG * shade1),
+			            static_cast<uint8_t>(tB * shade1), 255);
+			Color tCol2(static_cast<uint8_t>(tR * shade2),
+			            static_cast<uint8_t>(tG * shade2),
+			            static_cast<uint8_t>(tB * shade2), 255);
+
+			mDebugRenderer->DrawTriangle(t00, t10, t01, tCol1);
+			mDebugRenderer->DrawTriangle(t10, t11, t01, tCol2);
 		}
 	}
 
-	// ---- Water surface mesh ----
+	// ---- Water surface mesh with normal-based lighting ----
 	for (uint32_t z = 0; z + wS < NZ; z += wS)
 	{
 		for (uint32_t x = 0; x + wS < NX; x += wS)
@@ -584,6 +674,31 @@ void WulfNetWaterV5Base::DrawSheet()
 			float s01 = c01.terrainHeight + c01.waterHeight;
 			float s11 = c11.terrainHeight + c11.waterHeight;
 
+			// Perlin noise visual displacement — makes the surface shimmer
+			// and ripple even when the underlying simulation is calm.
+			if (mConfig.noiseEnabled && mConfig.noiseAmplitude > 0.0f)
+			{
+				float nFreq = mConfig.noiseFrequency * 1.5f;
+				float nTime = mNoiseTime * mConfig.noiseSpeed;
+				int   nOct  = mConfig.noiseOctaves;
+				float nLac  = mConfig.noiseLacunarity;
+				float nPer  = mConfig.noisePersistence;
+
+				auto sampleNoise = [&](float wx, float wz, float depth) -> float
+				{
+					if (depth < minH) return 0.0f;
+					float depthScale = std::min(1.0f, depth * 5.0f);
+					float n = mNoise.FBM3D(wx * nFreq, wz * nFreq, nTime,
+					                        nOct, nLac, nPer, mConfig.noiseAmplitude, 1.0f);
+					return n * depthScale;
+				};
+
+				s00 += sampleNoise(wx0, wz0, c00.waterHeight);
+				s10 += sampleNoise(wx1, wz0, c10.waterHeight);
+				s01 += sampleNoise(wx0, wz1, c01.waterHeight);
+				s11 += sampleNoise(wx1, wz1, c11.waterHeight);
+			}
+
 			RVec3 w00(wx0, oy + s00, wz0);
 			RVec3 w10(wx1, oy + s10, wz0);
 			RVec3 w01(wx0, oy + s01, wz1);
@@ -591,8 +706,27 @@ void WulfNetWaterV5Base::DrawSheet()
 
 			float avgDepth = (c00.waterHeight + c10.waterHeight +
 			                  c01.waterHeight + c11.waterHeight) * 0.25f;
-			Color wCol = DepthColor(avgDepth);
+			Color baseCol = DepthColor(avgDepth);
 
+			// Compute face normal for specular highlight / directional shade
+			Vec3 we1 = Vec3(w10 - w00);
+			Vec3 we2 = Vec3(w01 - w00);
+			Vec3 wn = we1.Cross(we2);
+			if (wn.LengthSq() > 1e-12f) wn = wn.Normalized();
+			float nDotL = std::max(0.0f, wn.Dot(lightDir));
+			float shade = ambientWater + (1.0f - ambientWater) * nDotL;
+
+			// Fresnel-like rim brightening: steeper viewing = more opaque
+			float specPower = nDotL * nDotL * nDotL;  // Cheap specular approximation
+			float specBoost = specPower * 40.0f;        // Bright highlight
+
+			uint8_t sR = static_cast<uint8_t>(std::min(255.0f, baseCol.r * shade + specBoost));
+			uint8_t sG = static_cast<uint8_t>(std::min(255.0f, baseCol.g * shade + specBoost));
+			uint8_t sB = static_cast<uint8_t>(std::min(255.0f, baseCol.b * shade + specBoost));
+
+			Color wCol(sR, sG, sB, baseCol.a);
+
+			// Front and back faces for double-sided water rendering
 			mDebugRenderer->DrawTriangle(w00, w10, w01, wCol);
 			mDebugRenderer->DrawTriangle(w10, w11, w01, wCol);
 			mDebugRenderer->DrawTriangle(w01, w10, w00, wCol);
@@ -610,19 +744,20 @@ String WulfNetWaterV5Base::GetStatusString() const
 {
 	const WulfNet::SystemStats &sys = WulfNet::SystemMonitor::Get().GetStats();
 
-	// Count wet cells
+	// Count wet cells — use v² comparison to avoid sqrt per cell
 	uint32_t wetCells = 0;
 	float maxDepth = 0.0f;
-	float maxVel = 0.0f;
+	float maxVel2 = 0.0f;
 	uint32_t total = mConfig.gridSizeX * mConfig.gridSizeZ;
 	for (uint32_t i = 0; i < total; ++i)
 	{
 		if (mGrid[i].waterHeight > mConfig.minWaterDraw)
 			++wetCells;
 		maxDepth = std::max(maxDepth, mGrid[i].waterHeight);
-		float vel = std::sqrt(mGrid[i].vx * mGrid[i].vx + mGrid[i].vz * mGrid[i].vz);
-		maxVel = std::max(maxVel, vel);
+		float vel2 = mGrid[i].vx * mGrid[i].vx + mGrid[i].vz * mGrid[i].vz;
+		if (vel2 > maxVel2) maxVel2 = vel2;
 	}
+	float maxVel = std::sqrt(maxVel2);  // Single sqrt at the end
 
 	std::ostringstream oss;
 	oss << std::fixed;

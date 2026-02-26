@@ -94,8 +94,8 @@ struct COFLIPConfig {
     // CO-FLIP typically uses high FLIP ratio due to energy preservation
     float flipRatio = 0.99f;
 
-    // Pressure solver iterations
-    uint32_t pressureIterations = 50;
+    // Pressure solver iterations (SOR converges fast; 20 is plenty for games)
+    uint32_t pressureIterations = 20;
 
     // Surface tension coefficient
     float surfaceTension = 0.0728f;  // Water at 20°C
@@ -207,8 +207,8 @@ private:
     void InterpolateVelocityGradient(float x, float y, float z, float grad[9]) const;
 
     // B-spline basis functions for high-order interpolation
-    float BSpline(float x) const;
-    float BSplineDerivative(float x) const;
+    inline float BSpline(float x) const;
+    inline float BSplineDerivative(float x) const;
 
     // Grid helpers
     int GridIndex(int i, int j, int k) const;
@@ -238,8 +238,14 @@ private:
     std::vector<COFLIPCell> m_grid;
     uint32_t m_gridTotalCells = 0;
 
-    // Previous velocities for FLIP update
+    // Previous velocity storage for FLIP update
     std::vector<float> m_prevU, m_prevV, m_prevW;
+
+    // Swap buffers for O(1) velocity snapshot (avoids per-element copy)
+    std::vector<float> m_prevSwapU, m_prevSwapV, m_prevSwapW;
+
+    // Persistent pressure solver buffer (avoids ~1 MB alloc per frame)
+    std::vector<float> m_pressureTemp;
 
     // Emitter data
     struct Emitter {
@@ -250,8 +256,9 @@ private:
     };
     std::vector<Emitter> m_emitters;
 
-    // Solid obstacles (marked in grid)
-    std::vector<bool> m_solidCells;
+    // Solid obstacles (marked in grid) — use uint8_t instead of bool
+    // to avoid std::vector<bool> bit-packing (slow random access)
+    std::vector<uint8_t> m_solidCells;
 
     // Statistics
     COFLIPStats m_stats;

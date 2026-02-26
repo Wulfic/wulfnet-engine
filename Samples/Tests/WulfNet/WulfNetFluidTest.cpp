@@ -13,6 +13,8 @@
 #include <Renderer/DebugRendererImp.h>
 #include <sstream>
 #include <iomanip>
+#include <cmath>
+#include <cfloat>
 
 // Register RTTI for factory
 JPH_IMPLEMENT_RTTI_VIRTUAL(WulfNetFluidTest)
@@ -86,7 +88,7 @@ void WulfNetFluidTest::Initialize()
 	mFluidConfig.cellSize = 0.25f;  // 25cm cells — 4× fewer particles vs 0.15
 	mFluidConfig.dt = 1.0f / 60.0f;
 	mFluidConfig.flipRatio = 0.99f;
-	mFluidConfig.pressureIterations = 40;
+	mFluidConfig.pressureIterations = 20;  // SOR converges fast
 	mFluidConfig.particlesPerCell = 4;
 	mFluidConfig.useGPU = true;  // GPU accelerated via Jolt compute system
 
@@ -95,7 +97,7 @@ void WulfNetFluidTest::Initialize()
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
 	mSurfaceConfig.gridSizeZ = mFluidConfig.gridSizeZ;
 	mSurfaceConfig.cellSize = mFluidConfig.cellSize;
-	mSurfaceConfig.splatRadius = 3.5f;
+	mSurfaceConfig.splatRadius = 2.5f;  // Reduced from 3.5 for performance
 	mSurfaceConfig.smoothingSigma = 1.4f;
 	mSurfaceConfig.isoLevel = 0.3f;
 	mSurfaceConfig.useGPU = true;
@@ -142,10 +144,14 @@ void WulfNetFluidTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
 	// (no-op if running on CPU)
 	mFluidSystem.SyncParticlesFromGPU();
 
-	// Generate surface mesh from particles
+	// Generate surface mesh from particles (throttled for performance)
 	if (mDrawSurface)
 	{
-		mFluidSurface.GenerateSurface(mFluidSystem);
+		mSurfaceFrameCounter++;
+		if (mSurfaceFrameCounter >= mSurfaceUpdateInterval) {
+			mSurfaceFrameCounter = 0;
+			mFluidSurface.GenerateSurface(mFluidSystem);
+		}
 	}
 
 	// Draw fluid
@@ -200,19 +206,33 @@ void WulfNetFluidTest::DrawFluid()
 	const auto& particles = mFluidSystem.GetParticles();
 	uint32_t count = mFluidSystem.GetActiveParticleCount();
 
+	// Compute vertical extents for depth-based coloring
+	float minY = FLT_MAX, maxY = -FLT_MAX;
 	for (uint32_t i = 0; i < count; ++i)
 	{
 		const WulfNet::COFLIPParticle& p = particles[i];
-		if (!(p.flags & 1)) continue;  // Not active
+		if (!(p.flags & 1)) continue;
+		if (p.y < minY) minY = p.y;
+		if (p.y > maxY) maxY = p.y;
+	}
+	float yRange = std::max(0.01f, maxY - minY);
 
-		// Blue water color
-		Color drawColor(64, 128, 255, 200);
+	for (uint32_t i = 0; i < count; ++i)
+	{
+		const WulfNet::COFLIPParticle& p = particles[i];
+		if (!(p.flags & 1)) continue;
 
-		// Draw particle as small marker
+		// Depth-dependent color: shallow (near surface) = light cyan, deep = dark blue
+		float depthT = 1.0f - std::min(1.0f, (p.y - minY) / yRange);
+		depthT = depthT * depthT; // Non-linear for better depth perception
+		uint8_t r = static_cast<uint8_t>(100 - depthT * 60);
+		uint8_t g = static_cast<uint8_t>(180 - depthT * 80);
+		uint8_t b = static_cast<uint8_t>(255 - depthT * 40);
+		Color drawColor(r, g, b, 200);
+
 		RVec3 pos(p.x, p.y, p.z);
 		mDebugRenderer->DrawMarker(pos, drawColor, mParticleSize);
 
-		// Optionally draw velocity
 		if (mDrawVelocities && (p.vx*p.vx + p.vy*p.vy + p.vz*p.vz) > 0.01f)
 		{
 			Vec3 vel(p.vx, p.vy, p.vz);
@@ -230,10 +250,19 @@ void WulfNetFluidTest::DrawSurface()
 
 	if (triangles.empty()) return;
 
-	// Water color with transparency
-	Color waterColor(32, 100, 200, 180);
+	// Directional light for shading (from upper-right, matches V5)
+	Vec3 lightDir = Vec3(0.4f, 0.8f, 0.3f).Normalized();
+	const float ambient = 0.30f;
 
-	// Draw each triangle
+	// Compute vertical extent of the surface for depth coloring
+	float minY = FLT_MAX, maxY = -FLT_MAX;
+	for (const auto& v : vertices)
+	{
+		if (v.y < minY) minY = v.y;
+		if (v.y > maxY) maxY = v.y;
+	}
+	float yRange = std::max(0.01f, maxY - minY);
+
 	for (const auto& tri : triangles)
 	{
 		const auto& v0 = vertices[tri.v0];
@@ -244,6 +273,39 @@ void WulfNetFluidTest::DrawSurface()
 		RVec3 p1(v1.x, v1.y, v1.z);
 		RVec3 p2(v2.x, v2.y, v2.z);
 
+		// Average normal from vertices (marching cubes generates smooth normals)
+		Vec3 normal(v0.nx + v1.nx + v2.nx,
+		            v0.ny + v1.ny + v2.ny,
+		            v0.nz + v1.nz + v2.nz);
+		if (normal.LengthSq() > 1e-12f)
+			normal = normal.Normalized();
+
+		// Directional lighting
+		float nDotL = std::max(0.0f, normal.Dot(lightDir));
+		float shade = ambient + (1.0f - ambient) * nDotL;
+
+		// Specular highlight (cheap Blinn-Phong approximation)
+		// Assume view roughly from above-forward
+		Vec3 halfVec = (lightDir + Vec3(0.0f, 1.0f, 0.0f)).Normalized();
+		float spec = std::pow(std::max(0.0f, normal.Dot(halfVec)), 16.0f);
+
+		// Depth-based base color: top of fluid = light translucent blue,
+		// bottom = deep opaque blue
+		float avgY = (v0.y + v1.y + v2.y) / 3.0f;
+		float depthT = 1.0f - std::min(1.0f, (avgY - minY) / yRange);
+		depthT = depthT * depthT;
+
+		// Shallow: (100, 180, 240, 160), Deep: (20, 60, 180, 220)
+		uint8_t baseR = static_cast<uint8_t>(100 - depthT * 80);
+		uint8_t baseG = static_cast<uint8_t>(180 - depthT * 120);
+		uint8_t baseB = static_cast<uint8_t>(240 - depthT * 60);
+		uint8_t baseA = static_cast<uint8_t>(160 + depthT * 60);
+
+		uint8_t r = static_cast<uint8_t>(std::min(255.0f, baseR * shade + spec * 50.0f));
+		uint8_t g = static_cast<uint8_t>(std::min(255.0f, baseG * shade + spec * 50.0f));
+		uint8_t b = static_cast<uint8_t>(std::min(255.0f, baseB * shade + spec * 50.0f));
+
+		Color waterColor(r, g, b, baseA);
 		mDebugRenderer->DrawTriangle(p0, p1, p2, waterColor);
 	}
 #endif
@@ -478,16 +540,18 @@ void WulfNetPuddleTest::SetupFluid()
 
 void WulfNetLakeTest::SetupFluid()
 {
-	// Large lake — coarser cells for massive volume
-	mFluidConfig.gridSizeX = 40;
-	mFluidConfig.gridSizeY = 16;
-	mFluidConfig.gridSizeZ = 40;
+	// Large lake — 10× volume vs original, coarser cells for massive scale
+	mFluidConfig.gridSizeX = 80;
+	mFluidConfig.gridSizeY = 24;
+	mFluidConfig.gridSizeZ = 80;
 	mFluidConfig.cellSize = 0.25f;
+	mFluidConfig.pressureIterations = 20;  // SOR converges fast
 
 	mSurfaceConfig.gridSizeX = mFluidConfig.gridSizeX;
 	mSurfaceConfig.gridSizeY = mFluidConfig.gridSizeY;
 	mSurfaceConfig.gridSizeZ = mFluidConfig.gridSizeZ;
 	mSurfaceConfig.cellSize = mFluidConfig.cellSize;
+	mSurfaceConfig.splatRadius = 2.5f;  // Reduced from 3.5 for performance
 
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
@@ -498,8 +562,10 @@ void WulfNetLakeTest::SetupFluid()
 	}
 	mFluidSurface.Initialize(mSurfaceConfig);
 
-	// Create large body of water
-	CreateWaterBox(1.0f, 0.2f, 1.0f, 8.5f, 1.5f, 8.5f);
+	// Create large body of water (~10× original volume)
+	// Original: 7.5 × 1.3 × 7.5 = 73.125 m³
+	// New:      16.0 × 2.8 × 16.0 = 716.8 m³ (~9.8× larger)
+	CreateWaterBox(1.0f, 0.2f, 1.0f, 17.0f, 3.0f, 17.0f);
 }
 
 void WulfNetLakeTest::SetupObjects()

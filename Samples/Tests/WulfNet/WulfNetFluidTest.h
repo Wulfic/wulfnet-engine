@@ -65,6 +65,10 @@ protected:
 	// Stats display
 	bool mShowStats = true;
 
+	// Surface generation throttle (skip frames for performance)
+	uint32_t mSurfaceFrameCounter = 0;
+	uint32_t mSurfaceUpdateInterval = 2;  // Generate surface every N frames
+
 	// System monitoring
 	float mStatsUpdateTimer = 0.0f;
 	static constexpr float cStatsUpdateInterval = 0.5f;  // Update every 0.5 seconds

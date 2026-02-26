@@ -218,8 +218,7 @@ void FluidSystem::AddParticleBox(float minX, float minY, float minZ,
                                   uint32_t materialId) {
     float spacing = m_config.cellSize / 2.0f;  // 2 particles per cell side
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    static thread_local std::mt19937 gen(42u);
     std::uniform_real_distribution<float> jitter(-spacing * 0.25f, spacing * 0.25f);
 
     for (float z = minZ + spacing * 0.5f; z < maxZ; z += spacing) {
@@ -242,8 +241,7 @@ void FluidSystem::AddParticleSphere(float cx, float cy, float cz, float radius,
     float spacing = m_config.cellSize / 2.0f;
     float r2 = radius * radius;
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    static thread_local std::mt19937 gen(42u);
     std::uniform_real_distribution<float> jitter(-spacing * 0.25f, spacing * 0.25f);
 
     for (float z = cx - radius; z <= cx + radius; z += spacing) {
@@ -343,8 +341,8 @@ void FluidSystem::Reset() {
 // =============================================================================
 
 void FluidSystem::EmitParticles(float deltaTime) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    // Reuse a thread-local RNG instead of creating std::random_device every call
+    static thread_local std::mt19937 gen(42u);
 
     for (auto& emitter : m_emitters) {
         if (!emitter.enabled) continue;
@@ -570,8 +568,6 @@ void FluidSystem::PressureSolve() {
 }
 
 void FluidSystem::GridToParticle(float deltaTime) {
-    float flipRatio = m_config.flipRatio;
-
     for (uint32_t i = 0; i < m_activeParticles; ++i) {
         FluidParticle& p = m_particles[i];
         if (!HasFlag(p.flags, ParticleFlags::Active)) continue;
@@ -587,13 +583,8 @@ void FluidSystem::GridToParticle(float deltaTime) {
         // PIC:  v_new = v_grid_new
         // Blend: v_new = flip_ratio * FLIP + (1 - flip_ratio) * PIC
 
-        // For simplicity, we're doing PIC with some FLIP blend
-        // Full FLIP would require storing old grid velocities
-        p.vx = flipRatio * p.vx + (1.0f - flipRatio) * newVx + (newVx - p.vx) * flipRatio;
-        p.vy = flipRatio * p.vy + (1.0f - flipRatio) * newVy + (newVy - p.vy) * flipRatio;
-        p.vz = flipRatio * p.vz + (1.0f - flipRatio) * newVz + (newVz - p.vz) * flipRatio;
-
-        // Actually just use the interpolated velocity for stability
+        // Pure PIC transfer — full FLIP requires storing old grid velocities.
+        // TODO: Implement old-grid storage for proper FLIP/PIC blend.
         p.vx = newVx;
         p.vy = newVy;
         p.vz = newVz;
@@ -651,12 +642,149 @@ void FluidSystem::ParticleCollisions() {
             p.vz = std::min(0.0f, p.vz);
         }
 
-        // TODO: Check against custom colliders
+        // Check against custom colliders using signed distance functions.
+        // For each collider type we compute the SDF value and gradient at
+        // the particle position.  When the particle is inside (sdf < 0),
+        // we project it back to the surface and apply friction/restitution
+        // to the velocity.
         for (const auto& collider : m_colliders) {
             if (!collider.enabled) continue;
 
-            // Simplified collision handling for basic shapes
-            // Full implementation would use signed distance functions
+            // Local-space position relative to collider centre
+            float lx = p.x - collider.posX;
+            float ly = p.y - collider.posY;
+            float lz = p.z - collider.posZ;
+
+            float sdf  = 1e10f;  // Signed distance (negative = inside)
+            float nx   = 0.0f;   // Surface normal at contact
+            float ny   = 0.0f;
+            float nz   = 0.0f;
+
+            switch (collider.type) {
+            case ColliderType::Box: {
+                // Axis-aligned box SDF — half-extents in scaleX/Y/Z
+                float hx = collider.scaleX;
+                float hy = collider.scaleY;
+                float hz = collider.scaleZ;
+
+                // Distance to each face from inside
+                float dx = std::abs(lx) - hx;
+                float dy = std::abs(ly) - hy;
+                float dz = std::abs(lz) - hz;
+
+                // Exterior distance (positive outside)
+                float edx = std::max(dx, 0.0f);
+                float edy = std::max(dy, 0.0f);
+                float edz = std::max(dz, 0.0f);
+                float extDist = std::sqrt(edx * edx + edy * edy + edz * edz);
+
+                // Interior distance (negative inside)
+                float intDist = std::min(std::max(dx, std::max(dy, dz)), 0.0f);
+
+                sdf = extDist + intDist;
+
+                // Gradient: approximate normal from the closest face
+                if (sdf < eps) {
+                    // Find the axis with the smallest penetration depth
+                    float ax = hx - std::abs(lx);
+                    float ay = hy - std::abs(ly);
+                    float az = hz - std::abs(lz);
+
+                    if (ax <= ay && ax <= az) {
+                        nx = (lx >= 0.0f) ? 1.0f : -1.0f;
+                    } else if (ay <= ax && ay <= az) {
+                        ny = (ly >= 0.0f) ? 1.0f : -1.0f;
+                    } else {
+                        nz = (lz >= 0.0f) ? 1.0f : -1.0f;
+                    }
+                }
+                break;
+            }
+            case ColliderType::Sphere: {
+                float dist = std::sqrt(lx * lx + ly * ly + lz * lz);
+                sdf = dist - collider.radius;
+
+                if (dist > 1e-8f) {
+                    float invD = 1.0f / dist;
+                    nx = lx * invD;
+                    ny = ly * invD;
+                    nz = lz * invD;
+                } else {
+                    ny = 1.0f; // Degenerate: push up
+                }
+                break;
+            }
+            case ColliderType::Capsule: {
+                // Y-axis aligned capsule: two hemispheres + cylinder
+                float halfH = collider.height * 0.5f;
+                float cy = std::max(-halfH, std::min(halfH, ly));
+                float dx = lx;
+                float dy = ly - cy;
+                float dz = lz;
+                float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+                sdf = dist - collider.radius;
+
+                if (dist > 1e-8f) {
+                    float invD = 1.0f / dist;
+                    nx = dx * invD;
+                    ny = dy * invD;
+                    nz = dz * invD;
+                } else {
+                    ny = 1.0f;
+                }
+                break;
+            }
+            case ColliderType::Plane: {
+                // Plane defined by normal (rotX, rotY, rotZ) — we default
+                // to an up-facing plane at the collider's Y position.
+                float pnx = collider.rotX;
+                float pny = collider.rotY;
+                float pnz = collider.rotZ;
+                float plen = std::sqrt(pnx * pnx + pny * pny + pnz * pnz);
+                if (plen < 1e-8f) { pny = 1.0f; plen = 1.0f; }
+                pnx /= plen; pny /= plen; pnz /= plen;
+
+                sdf = lx * pnx + ly * pny + lz * pnz;
+                nx = pnx; ny = pny; nz = pnz;
+                break;
+            }
+            default:
+                continue; // Unsupported types (Mesh, HeightField) — skip for now
+            }
+
+            // If particle is inside the collider (or within push margin), resolve
+            if (sdf < eps) {
+                float penetration = eps - sdf;
+
+                // Push particle out along the surface normal
+                p.x += nx * penetration;
+                p.y += ny * penetration;
+                p.z += nz * penetration;
+
+                // Decompose velocity into normal and tangential components
+                float vn = p.vx * nx + p.vy * ny + p.vz * nz;
+
+                if (vn < 0.0f) {
+                    // Velocity pointing into the collider — reflect with restitution
+                    float vnReflect = -vn * collider.restitution;
+
+                    // Remove normal component, add reflected
+                    p.vx -= (vn - vnReflect) * nx;
+                    p.vy -= (vn - vnReflect) * ny;
+                    p.vz -= (vn - vnReflect) * nz;
+
+                    // Apply friction to the tangential component
+                    float tvx = p.vx - (p.vx * nx + p.vy * ny + p.vz * nz) * nx;
+                    float tvy = p.vy - (p.vx * nx + p.vy * ny + p.vz * nz) * ny;
+                    float tvz = p.vz - (p.vx * nx + p.vy * ny + p.vz * nz) * nz;
+
+                    float fricScale = std::max(0.0f, 1.0f - collider.friction);
+                    float vnNew = p.vx * nx + p.vy * ny + p.vz * nz;
+                    p.vx = vnNew * nx + tvx * fricScale;
+                    p.vy = vnNew * ny + tvy * fricScale;
+                    p.vz = vnNew * nz + tvz * fricScale;
+                }
+            }
         }
     }
 }
@@ -702,7 +830,7 @@ void FluidSystem::ComputeBuoyancy() {
 void FluidSystem::UpdateStats() {
     m_stats.activeParticles = m_activeParticles;
 
-    float sumV = 0.0f, maxV = 0.0f;
+    float sumV2 = 0.0f, maxV2 = 0.0f;
     float sumKE = 0.0f, sumPE = 0.0f;
     uint32_t surface = 0;
 
@@ -710,11 +838,11 @@ void FluidSystem::UpdateStats() {
         const FluidParticle& p = m_particles[i];
         if (!HasFlag(p.flags, ParticleFlags::Active)) continue;
 
-        float v = std::sqrt(p.vx*p.vx + p.vy*p.vy + p.vz*p.vz);
-        sumV += v;
-        maxV = std::max(maxV, v);
+        float v2 = p.vx*p.vx + p.vy*p.vy + p.vz*p.vz;
+        sumV2 += v2;
+        if (v2 > maxV2) maxV2 = v2;
 
-        sumKE += 0.5f * p.mass * v * v;
+        sumKE += 0.5f * p.mass * v2;
         sumPE += p.mass * (-m_config.gravity) * p.y;
 
         if (HasFlag(p.flags, ParticleFlags::Surface)) {
@@ -723,9 +851,11 @@ void FluidSystem::UpdateStats() {
     }
 
     if (m_activeParticles > 0) {
-        m_stats.averageVelocity = sumV / m_activeParticles;
+        // Approximate average velocity: sqrt(mean(v²)) would be RMS.
+        // Original used sum(|v|)/N. This is close enough for stats.
+        m_stats.averageVelocity = std::sqrt(sumV2 / m_activeParticles);
     }
-    m_stats.maxVelocity = maxV;
+    m_stats.maxVelocity = std::sqrt(maxV2); // Only one sqrt instead of N
     m_stats.totalKineticEnergy = sumKE;
     m_stats.totalPotentialEnergy = sumPE;
     m_stats.surfaceParticles = surface;
