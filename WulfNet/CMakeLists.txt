@@ -24,7 +24,10 @@ set(WULFNET_SOURCES
 
     # Physics - Fluids (CO-FLIP)
     Physics/Fluids/COFLIPSystem.cpp
+    Physics/Fluids/COFLIPSystemCPU.cpp
+    Physics/Fluids/COFLIPSystemInterp.cpp
     Physics/Fluids/FluidSurface.cpp
+    Physics/Fluids/FluidSurfaceMarch.cpp
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.cpp
@@ -35,6 +38,7 @@ set(WULFNET_SOURCES
 
     # Physics - Gaseous Simulation
     Physics/Gaseous/GaseousSystem.cpp
+    Physics/Gaseous/GaseousSystemSolve.cpp
 
     # Physics - Destruction System
     Physics/Destruction/DestructionSystem.cpp

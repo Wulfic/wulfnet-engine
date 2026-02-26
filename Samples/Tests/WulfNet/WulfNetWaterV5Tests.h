@@ -136,6 +136,9 @@ protected:
 	WulfNet::PerlinNoise mNoise;   // Deterministic noise generator
 	float mNoiseTime = 0.0f;       // Accumulated time for noise animation
 
+	// ---- Transport outflow buffer (persistent — avoids per-frame allocation) ----
+	std::vector<float> mOutflowBuf;  // 4 floats per cell: [Left, Right, Back, Front]
+
 private:
 	// ---- Solver ----
 	void StepSWE(float dt);

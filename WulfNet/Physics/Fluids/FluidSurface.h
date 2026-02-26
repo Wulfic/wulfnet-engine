@@ -74,6 +74,8 @@ struct FluidSurfaceConfig {
 struct FluidSurfaceStats {
     uint32_t vertexCount = 0;
     uint32_t triangleCount = 0;
+    float minVertexY = 0.0f;        // Cached vertical extents for depth coloring
+    float maxVertexY = 0.0f;
     float splatTimeMs = 0.0f;
     float smoothTimeMs = 0.0f;
     float marchingCubesTimeMs = 0.0f;
@@ -162,6 +164,11 @@ private:
     std::vector<float> m_density;
     std::vector<float> m_smoothTemp;  // Persistent temp buffer for SmoothDensity
     uint32_t m_gridTotalCells = 0;
+
+    // Thread-local density buffers for parallel particle splatting.
+    // Each thread accumulates into its own density array, then we sum them.
+    std::vector<std::vector<float>> m_splatThreadDensity;
+    int m_splatThreadCount = 0;
 
     // Output mesh
     std::vector<FluidSurfaceVertex> m_vertices;

@@ -54,6 +54,7 @@
 #include <Utils/ReadData.h>
 #include <Renderer/DebugRendererImp.h>
 #include <Tests/WulfNet/WulfNetFluidTest.h>
+#include <Tests/WulfNet/WulfNetFluidShowcaseTests.h>
 #include <Tests/WulfNet/WulfNetPhysicsTests.h>
 #include <Tests/WulfNet/WulfNetAdvancedTests.h>
 #include <Tests/WulfNet/WulfNetWaterV5Tests.h>
@@ -453,6 +454,17 @@ JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetBuoyancyTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRagdollSwimTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetClothWaterTest)
 
+// WulfNet CO-FLIP Showcase Tests
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidShowcase)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRippleBasinTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTerrainCascadeTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidDamBreak3DTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRainStormTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTsunamiSurgeTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRiverRapidsTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidCalderaEruptionTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidValleyFloodTest)
+
 // WulfNet Physics Integration Tests
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetIFSFractalTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetSmokeTest)
@@ -496,6 +508,14 @@ static TestNameAndRTTI sWulfNetTests[] =
 	{ "Terrain Deformation",				JPH_RTTI(WulfNetTerrainVisualTest) },
 	{ "Volumetric Clouds",					JPH_RTTI(WulfNetVolumetricVisualTest) },
 	{ "Spatial Audio & Acoustics",			JPH_RTTI(WulfNetAudioVisualTest) },
+	{ "CO-FLIP: Ripple Basin",				JPH_RTTI(WulfNetFluidRippleBasinTest) },
+	{ "CO-FLIP: Terrain Cascade",			JPH_RTTI(WulfNetFluidTerrainCascadeTest) },
+	{ "CO-FLIP: Dam Break 3D",				JPH_RTTI(WulfNetFluidDamBreak3DTest) },
+	{ "CO-FLIP: Rain Storm",				JPH_RTTI(WulfNetFluidRainStormTest) },
+	{ "CO-FLIP: Tsunami Surge",				JPH_RTTI(WulfNetFluidTsunamiSurgeTest) },
+	{ "CO-FLIP: River Rapids",				JPH_RTTI(WulfNetFluidRiverRapidsTest) },
+	{ "CO-FLIP: Caldera Eruption",			JPH_RTTI(WulfNetFluidCalderaEruptionTest) },
+	{ "CO-FLIP: Valley Flood",				JPH_RTTI(WulfNetFluidValleyFloodTest) },
 	{ "Water V5: Ripple Pond",				JPH_RTTI(WulfNetWaterV5RipplePondTest) },
 	{ "Water V5: Terrain Flow",				JPH_RTTI(WulfNetWaterV5TerrainFlowTest) },
 	{ "Water V5: Dam Break (Sheet)",		JPH_RTTI(WulfNetWaterV5DamBreakTest) },

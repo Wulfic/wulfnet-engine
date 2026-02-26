@@ -12,6 +12,7 @@
 #include <WulfNet/Physics/Fluids/FluidSurface.h>
 #include <WulfNet/Core/System/SystemMonitor.h>
 #include <chrono>
+#include <future>
 
 class WulfNetFluidTest : public Test
 {
@@ -68,6 +69,10 @@ protected:
 	// Surface generation throttle (skip frames for performance)
 	uint32_t mSurfaceFrameCounter = 0;
 	uint32_t mSurfaceUpdateInterval = 2;  // Generate surface every N frames
+
+	// Async surface generation — overlaps MC extraction with physics step
+	bool mAsyncSurface = true;
+	std::future<void> mSurfaceFuture;
 
 	// System monitoring
 	float mStatsUpdateTimer = 0.0f;

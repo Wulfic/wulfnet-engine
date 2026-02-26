@@ -122,6 +122,8 @@ struct COFLIPStats {
     float totalEnergy = 0.0f;       // Kinetic + potential (should be conserved!)
     float totalCirculation = 0.0f;  // Vorticity integral (should be conserved!)
     float maxVelocity = 0.0f;
+    float minParticleY = 0.0f;      // Cached vertical extents for depth coloring
+    float maxParticleY = 0.0f;
     float p2gTimeMs = 0.0f;
     float pressureTimeMs = 0.0f;
     float g2pTimeMs = 0.0f;
@@ -195,6 +197,12 @@ private:
     void ApplyPressureGradient_CPU();
     void GridToParticle_CPU();
 
+    // Spatial hash counting sort — O(n) sort of particles by grid cell.
+    // Inspired by Nie et al. 2015 "Real-Time Incompressible Fluid Simulation
+    // on the GPU".  Sorting particles by cell before P2G scatter gives
+    // sequential memory access → much better cache utilization for large grids.
+    void SortParticlesByCell_CPU();
+
     // GPU simulation steps
     void ParticleToGrid_GPU();
     void ApplyExternalForces_GPU(float dt);
@@ -207,8 +215,8 @@ private:
     void InterpolateVelocityGradient(float x, float y, float z, float grad[9]) const;
 
     // B-spline basis functions for high-order interpolation
-    inline float BSpline(float x) const;
-    inline float BSplineDerivative(float x) const;
+    float BSpline(float x) const;
+    float BSplineDerivative(float x) const;
 
     // Grid helpers
     int GridIndex(int i, int j, int k) const;
@@ -246,6 +254,23 @@ private:
 
     // Persistent pressure solver buffer (avoids ~1 MB alloc per frame)
     std::vector<float> m_pressureTemp;
+
+    // Thread-local P2G accumulation buffers (persistent to avoid per-frame allocation).
+    // Each thread gets its own set of velocity/weight arrays to scatter into without
+    // contention, then we merge them in a parallel reduction after the scatter loop.
+    struct P2GThreadData {
+        std::vector<float> u, v, w, weightU, weightV, weightW;
+        std::vector<uint8_t> fluidFlag;
+    };
+    std::vector<P2GThreadData> m_p2gThreadData;
+    int m_p2gThreadCount = 0;  // Cached thread count to detect changes
+
+    // Counting sort buffers for spatial hash P2G optimization.
+    // Reordering particles by cell index before scatter gives ~2-3x P2G
+    // speedup on large grids (80x24x80+) due to L2 cache coherence.
+    std::vector<uint32_t> m_cellCount;              // Per-cell particle count
+    std::vector<uint32_t> m_cellStart;              // Prefix sum: first particle index per cell
+    std::vector<COFLIPParticle> m_sortedParticles;  // Particles in cell-sorted order
 
     // Emitter data
     struct Emitter {

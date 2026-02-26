@@ -288,12 +288,17 @@ set(SAMPLES_SRC_FILES
 	${SAMPLES_ROOT}/Tests/Water/WaterShapeTest.h
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidTest.cpp
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidTest.h
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidTestScenarios.cpp
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidShowcaseTests.cpp
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetFluidShowcaseTests.h
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetPhysicsTests.cpp
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetPhysicsTests.h
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetAdvancedTests.cpp
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetAdvancedTests.h
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetAdvancedTests2.cpp
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetWaterV5Tests.cpp
 	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetWaterV5Tests.h
+	${SAMPLES_ROOT}/Tests/WulfNet/WulfNetWaterV5Scenarios.cpp
 	${SAMPLES_ROOT}/Utils/ContactListenerImpl.cpp
 	${SAMPLES_ROOT}/Utils/ContactListenerImpl.h
 	${SAMPLES_ROOT}/Utils/DebugRendererSP.h
