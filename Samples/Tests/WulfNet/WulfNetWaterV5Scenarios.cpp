@@ -8,6 +8,7 @@
 
 #include <Samples.h>
 #include "WulfNetWaterV5Tests.h"
+#include "WaterDiagnostics.h"
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Layers.h>
@@ -68,6 +69,7 @@ JPH_IMPLEMENT_RTTI_VIRTUAL(WulfNetWaterV5FloodValleyTest)
 
 void WulfNetWaterV5RipplePondTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] RipplePond — 400x400 grid, periodic drops on shallow basin");
 	mConfig.gridSizeX       = 400;
 	mConfig.gridSizeZ       = 400;
 	mConfig.cellSize        = 0.2f;
@@ -112,6 +114,9 @@ void WulfNetWaterV5RipplePondTest::UpdateScenario(float dt)
 
 		// Larger radius drops (scaled up from 4 to 12) for visible ripples
 		AddWaterDrop(cx, cz, 12, 0.15f);
+		WaterDiagnostics::LogEvent(SWE_LOG_CAT,
+			"Drop #" + std::to_string(mDropCount) +
+			" at (" + std::to_string(cx) + "," + std::to_string(cz) + ")");
 	}
 }
 
@@ -122,6 +127,7 @@ void WulfNetWaterV5RipplePondTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5TerrainFlowTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] TerrainFlow — 350x350 grid, hilly landscape with ridge");
 	mConfig.gridSizeX       = 350;
 	mConfig.gridSizeZ       = 350;
 	mConfig.cellSize        = 0.25f;
@@ -179,6 +185,7 @@ void WulfNetWaterV5TerrainFlowTest::UpdateScenario(float /*dt*/)
 
 void WulfNetWaterV5DamBreakTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] DamBreak — 500x250 grid, tall water column behind dam wall");
 	mConfig.gridSizeX       = 500;
 	mConfig.gridSizeZ       = 250;
 	mConfig.cellSize        = 0.2f;
@@ -245,6 +252,7 @@ void WulfNetWaterV5DamBreakTest::UpdateScenario(float dt)
 	if (!mDamReleased && mDamTimer >= 1.5f)
 	{
 		mDamReleased = true;
+		WaterDiagnostics::LogEvent(SWE_LOG_CAT, "DAM BREAK at t=1.5s \u2014 terrain lowered at x=80-82");
 		for (uint32_t z = 0; z < mConfig.gridSizeZ; ++z)
 		{
 			mGrid[CellIndex(80, z)].terrainHeight = 0.0f;
@@ -261,6 +269,7 @@ void WulfNetWaterV5DamBreakTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5RainHillsTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] RainHills — 400x400 grid, random drops on hilly terrain");
 	mConfig.gridSizeX       = 400;
 	mConfig.gridSizeZ       = 400;
 	mConfig.cellSize        = 0.22f;
@@ -348,6 +357,7 @@ void WulfNetWaterV5RainHillsTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5TsunamiTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] Tsunami — 500x300 grid, deep ocean to coastline");
 	mConfig.gridSizeX       = 500;
 	mConfig.gridSizeZ       = 300;
 	mConfig.cellSize        = 0.3f;
@@ -411,10 +421,11 @@ void WulfNetWaterV5TsunamiTest::UpdateScenario(float dt)
 {
 	mWaveTimer += dt;
 
-	// At t=2s generate the tsunami — a massive water pulse on the deep ocean side
+	// At t=2s generate the tsunami \u2014 a massive water pulse on the deep ocean side
 	if (!mWaveTriggered && mWaveTimer >= 2.0f)
 	{
 		mWaveTriggered = true;
+		WaterDiagnostics::LogEvent(SWE_LOG_CAT, "TSUNAMI triggered at t=2.0s \u2014 3m pulse injected");
 		const float pi = 3.14159265f;
 		for (uint32_t z = 20; z < mConfig.gridSizeZ - 20; ++z)
 		{
@@ -435,6 +446,7 @@ void WulfNetWaterV5TsunamiTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5RiverCanyonTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] RiverCanyon — 150x600 grid, winding canyon with reservoir");
 	mConfig.gridSizeX       = 150;
 	mConfig.gridSizeZ       = 600;
 	mConfig.cellSize        = 0.2f;
@@ -531,6 +543,7 @@ void WulfNetWaterV5RiverCanyonTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5CalderaLakeTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] CalderaLake — 400x400 grid, volcanic crater lake");
 	mConfig.gridSizeX       = 400;
 	mConfig.gridSizeZ       = 400;
 	mConfig.cellSize        = 0.25f;
@@ -605,11 +618,13 @@ void WulfNetWaterV5CalderaLakeTest::UpdateScenario(float dt)
 {
 	mEruptionTimer += dt;
 
-	// Periodic eruptions every 3 seconds — up to 15 pulses
+	// Periodic eruptions every 3 seconds \u2014 up to 15 pulses
 	if (mEruptionTimer >= 3.0f && mEruptionCount < 15)
 	{
 		mEruptionTimer -= 3.0f;
 		mEruptionCount++;
+		WaterDiagnostics::LogEvent(SWE_LOG_CAT,
+			"Eruption #" + std::to_string(mEruptionCount) + " \u2014 central pulse r=20 h=1.5");
 
 		// Central eruption: massive water pulse at the vent
 		uint32_t cx = mConfig.gridSizeX / 2;
@@ -632,6 +647,7 @@ void WulfNetWaterV5CalderaLakeTest::UpdateScenario(float dt)
 
 void WulfNetWaterV5FloodValleyTest::SetupScenario()
 {
+	SWE_LOG_INFO("[SCENARIO] FloodValley — 500x300 grid, dam break into building grid");
 	mConfig.gridSizeX       = 500;
 	mConfig.gridSizeZ       = 300;
 	mConfig.cellSize        = 0.2f;
@@ -713,10 +729,11 @@ void WulfNetWaterV5FloodValleyTest::UpdateScenario(float dt)
 {
 	mFloodTimer += dt;
 
-	// At t=1.5s, break the dam — water rushes through the valley
+	// At t=1.5s, break the dam \u2014 water rushes through the valley
 	if (!mFloodReleased && mFloodTimer >= 1.5f)
 	{
 		mFloodReleased = true;
+		WaterDiagnostics::LogEvent(SWE_LOG_CAT, "FLOOD RELEASE at t=1.5s \u2014 dam at x=60-62 removed");
 		for (uint32_t z = 0; z < mConfig.gridSizeZ; ++z)
 		{
 			mGrid[CellIndex(60, z)].terrainHeight = 0.0f;

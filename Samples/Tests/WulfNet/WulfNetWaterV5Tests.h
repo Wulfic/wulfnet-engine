@@ -17,6 +17,8 @@
 
 #pragma once
 
+#define WULFNET_WATER_V5_AVAILABLE  // Guard for WaterDiagnostics SWE functions
+
 #include <Tests/Test.h>
 #include <WulfNet/Core/System/SystemMonitor.h>
 #include <WulfNet/Core/Math/PerlinNoise.h>

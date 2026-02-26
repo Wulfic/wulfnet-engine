@@ -8,6 +8,7 @@
 
 #include <Samples.h>
 #include <Tests/WulfNet/WulfNetFluidTest.h>
+#include "WaterDiagnostics.h"
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -62,6 +63,7 @@ JPH_IMPLEMENT_RTTI_VIRTUAL(WulfNetClothWaterTest)
 
 void WulfNetRiverTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] River — elongated domain, continuous emitter");
 	// River — elongated domain, moderate resolution
 	mFluidConfig.gridSizeX = 40;
 	mFluidConfig.gridSizeY = 16;
@@ -138,6 +140,7 @@ void WulfNetRiverTest::CreateRiverChannel()
 
 void WulfNetWaterfallTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Waterfall — vertical drop, splash pool");
 	// Waterfall — needs vertical space, moderate XZ
 	mFluidConfig.gridSizeX = 28;
 	mFluidConfig.gridSizeY = 32;
@@ -193,6 +196,7 @@ void WulfNetWaterfallTest::SetupObjects()
 
 void WulfNetPuddleTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Puddle — small domain, rain drops");
 	// Small puddle — tiny domain, moderate cells
 	mFluidConfig.gridSizeX = 20;
 	mFluidConfig.gridSizeY = 12;
@@ -226,6 +230,7 @@ void WulfNetPuddleTest::SetupFluid()
 
 void WulfNetLakeTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Lake — 80x24x80 grid, massive water volume (716.8 m³)");
 	// Large lake — 10× volume vs original, coarser cells for massive scale
 	mFluidConfig.gridSizeX = 80;
 	mFluidConfig.gridSizeY = 24;
@@ -288,6 +293,7 @@ void WulfNetLakeTest::SetupObjects()
 
 void WulfNetViscosityTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Viscosity — fluid viscosity comparison");
 	// Viscosity comparison — moderate grid
 	mFluidConfig.gridSizeX = 36;
 	mFluidConfig.gridSizeY = 20;
@@ -320,6 +326,7 @@ void WulfNetViscosityTest::SetupFluid()
 
 void WulfNetBuoyancyTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Buoyancy — floating/sinking objects in pool");
 	mFluidConfig.gridSizeX = 28;
 	mFluidConfig.gridSizeY = 20;
 	mFluidConfig.gridSizeZ = 28;
@@ -404,6 +411,7 @@ void WulfNetBuoyancyTest::SetupObjects()
 
 void WulfNetRagdollSwimTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Ragdoll Swim — ragdoll in swimming pool");
 	mFluidConfig.gridSizeX = 28;
 	mFluidConfig.gridSizeY = 20;
 	mFluidConfig.gridSizeZ = 28;
@@ -493,6 +501,7 @@ void WulfNetRagdollSwimTest::CreateRagdoll(float x, float y, float z)
 
 void WulfNetClothWaterTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("[SCENARIO] Cloth Water — soft body in pool");
 	mFluidConfig.gridSizeX = 28;
 	mFluidConfig.gridSizeY = 20;
 	mFluidConfig.gridSizeZ = 28;

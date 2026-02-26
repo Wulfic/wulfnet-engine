@@ -7,6 +7,7 @@
 #include <Samples.h>
 
 #include "WulfNetWaterV5Tests.h"
+#include "WaterDiagnostics.h"
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -58,6 +59,17 @@ void WulfNetWaterV5Base::Initialize()
 		anyTerrain = mGrid[i].terrainHeight != 0.0f;
 	if (!anyTerrain)
 		SetTerrainFlat(0.0f);
+
+	// Initialize water diagnostics logging
+	WaterDiagnostics::Initialize(GetRTTI()->GetName());
+	WaterDiagnostics::LogSWEConfig(mConfig);
+
+	// Log initial water volume
+	float initWater = 0.0f;
+	for (uint32_t i = 0; i < totalCells; ++i)
+		initWater += mGrid[i].waterHeight;
+	SWE_LOG_INFO("[INIT] Setup complete — TotalWater: " +
+	             std::to_string(initWater) + " | WetCells initial scan done");
 }
 
 // =====================================================================
@@ -525,6 +537,11 @@ void WulfNetWaterV5Base::PrePhysicsUpdate(const PreUpdateParams &inParams)
 	for (int32_t i = 0; i < total; ++i)
 		totalWater += mGrid[i].waterHeight;
 	mTotalWater = totalWater;
+
+	// Log per-frame SWE diagnostics
+	WaterDiagnostics::LogSWEFrame(mGrid, mConfig.gridSizeX, mConfig.gridSizeZ,
+	                               mConfig.cellSize, mSimTimeMs, mCurrentFPS,
+	                               mTotalWater);
 
 	// Render the water sheet
 	DrawSheet();

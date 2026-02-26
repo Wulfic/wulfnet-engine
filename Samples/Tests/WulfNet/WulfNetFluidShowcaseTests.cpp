@@ -8,6 +8,7 @@
 #include <Samples.h>
 
 #include "WulfNetFluidShowcaseTests.h"
+#include "WaterDiagnostics.h"
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -87,6 +88,7 @@ void WulfNetFluidShowcase::PrePhysicsUpdate(const PreUpdateParams &inParams)
 
 void WulfNetFluidRippleBasinTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Ripple Basin (64x24x64, cs=0.2) ===");
 	mFluidConfig.gridSizeX = 64;
 	mFluidConfig.gridSizeY = 24;
 	mFluidConfig.gridSizeZ = 64;
@@ -130,6 +132,7 @@ void WulfNetFluidRippleBasinTest::UpdateScenario(float dt)
 	{
 		mDropTimer -= 0.8f;
 		mDropCount++;
+		WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "RIPPLE DROP #" + std::to_string(mDropCount));
 
 		// Alternate drop positions
 		float cx, cz;
@@ -153,6 +156,7 @@ void WulfNetFluidRippleBasinTest::UpdateScenario(float dt)
 
 void WulfNetFluidTerrainCascadeTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Terrain Cascade (80x32x40, cs=0.15) ===");
 	mFluidConfig.gridSizeX = 80;
 	mFluidConfig.gridSizeY = 32;
 	mFluidConfig.gridSizeZ = 40;
@@ -231,6 +235,7 @@ void WulfNetFluidTerrainCascadeTest::UpdateScenario(float /*dt*/)
 
 void WulfNetFluidDamBreak3DTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Dam Break 3D (80x40x48, cs=0.15) ===");
 	mFluidConfig.gridSizeX = 80;
 	mFluidConfig.gridSizeY = 40;
 	mFluidConfig.gridSizeZ = 48;
@@ -315,6 +320,7 @@ void WulfNetFluidDamBreak3DTest::UpdateScenario(float dt)
 	if (!mDamReleased && mDamTimer >= 1.5f)
 	{
 		mDamReleased = true;
+		WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "DAM BREAK 3D released at t=1.5s");
 
 		// Clear the dam wall in the fluid grid — water rushes through
 		// Note: We cannot truly "remove" solid cells from outside the system,
@@ -333,6 +339,7 @@ void WulfNetFluidDamBreak3DTest::UpdateScenario(float dt)
 
 void WulfNetFluidRainStormTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Rain Storm (64x32x64, cs=0.18) ===");
 	mFluidConfig.gridSizeX = 64;
 	mFluidConfig.gridSizeY = 32;
 	mFluidConfig.gridSizeZ = 64;
@@ -405,6 +412,8 @@ void WulfNetFluidRainStormTest::UpdateScenario(float dt)
 	{
 		mRainTimer -= 0.04f;
 		mTotalDrops++;
+		if (mTotalDrops % 100 == 0)
+			WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "RAIN: " + std::to_string(mTotalDrops) + " drops spawned");
 
 		// Deterministic pseudo-random positions
 		uint32_t seed = static_cast<uint32_t>(mTotalDrops * 73856093u);
@@ -426,6 +435,7 @@ void WulfNetFluidRainStormTest::UpdateScenario(float dt)
 
 void WulfNetFluidTsunamiSurgeTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Tsunami Surge (96x32x48, cs=0.15) ===");
 	mFluidConfig.gridSizeX = 96;
 	mFluidConfig.gridSizeY = 32;
 	mFluidConfig.gridSizeZ = 48;
@@ -496,6 +506,7 @@ void WulfNetFluidTsunamiSurgeTest::UpdateScenario(float dt)
 	if (!mWaveTriggered && mWaveTimer >= 2.0f)
 	{
 		mWaveTriggered = true;
+		WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "TSUNAMI SURGE triggered at t=2.0s");
 
 		// Tall, wide water column — pushes a powerful front across the domain
 		CreateWaterBox(0.5f, 0.5f, 0.5f, 3.0f, 3.5f, 6.7f);
@@ -509,6 +520,7 @@ void WulfNetFluidTsunamiSurgeTest::UpdateScenario(float dt)
 
 void WulfNetFluidRiverRapidsTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: River Rapids (48x24x96, cs=0.15) ===");
 	mFluidConfig.gridSizeX = 48;
 	mFluidConfig.gridSizeY = 24;
 	mFluidConfig.gridSizeZ = 96;
@@ -588,6 +600,7 @@ void WulfNetFluidRiverRapidsTest::UpdateScenario(float /*dt*/)
 
 void WulfNetFluidCalderaEruptionTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Caldera Eruption (64x32x64, cs=0.18) ===");
 	mFluidConfig.gridSizeX = 64;
 	mFluidConfig.gridSizeY = 32;
 	mFluidConfig.gridSizeZ = 64;
@@ -666,6 +679,7 @@ void WulfNetFluidCalderaEruptionTest::UpdateScenario(float dt)
 	{
 		mEruptionTimer -= 2.5f;
 		mEruptionCount++;
+		WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "CALDERA ERUPTION #" + std::to_string(mEruptionCount));
 
 		float cx = mFluidConfig.gridSizeX * mFluidConfig.cellSize * 0.5f;
 		float cz = mFluidConfig.gridSizeZ * mFluidConfig.cellSize * 0.5f;
@@ -689,6 +703,7 @@ void WulfNetFluidCalderaEruptionTest::UpdateScenario(float dt)
 
 void WulfNetFluidValleyFloodTest::SetupFluid()
 {
+	COFLIP_LOG_INFO("=== SHOWCASE: Valley Flood (96x32x48, cs=0.15) ===");
 	mFluidConfig.gridSizeX = 96;
 	mFluidConfig.gridSizeY = 32;
 	mFluidConfig.gridSizeZ = 48;
@@ -793,6 +808,7 @@ void WulfNetFluidValleyFloodTest::UpdateScenario(float dt)
 	if (!mFloodReleased && mFloodTimer >= 1.5f)
 	{
 		mFloodReleased = true;
+		WaterDiagnostics::LogEvent(COFLIP_LOG_CAT, "VALLEY FLOOD released at t=1.5s");
 		CreateWaterBox(2.8f, 0.2f, 0.5f, 3.5f, 3.5f, 6.7f);
 	}
 }

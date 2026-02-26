@@ -5,6 +5,7 @@
 #include <Samples.h>
 
 #include <Tests/WulfNet/WulfNetFluidTest.h>
+#include "WaterDiagnostics.h"
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -36,6 +37,7 @@ WulfNetFluidTest::~WulfNetFluidTest()
 	if (mSurfaceFuture.valid()) mSurfaceFuture.get();
 	mFluidSystem.Shutdown();
 	mFluidSurface.Shutdown();
+	WaterDiagnostics::Shutdown();
 }
 
 void WulfNetFluidTest::Initialize()
@@ -78,9 +80,16 @@ void WulfNetFluidTest::Initialize()
 	}
 	mFluidSurface.Initialize(mSurfaceConfig);;
 
+	// Initialize water diagnostics logging
+	WaterDiagnostics::Initialize(GetRTTI()->GetName());
+	WaterDiagnostics::LogCOFLIPConfig(mFluidConfig);
+
 	// Let derived class set up specific fluid scenario
 	SetupFluid();
 	SetupObjects();
+
+	COFLIP_LOG_INFO("[INIT] Fluid setup complete — Particles: " +
+	                std::to_string(mFluidSystem.GetActiveParticleCount()));
 }
 
 void WulfNetFluidTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
@@ -109,6 +118,9 @@ void WulfNetFluidTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
 	// Sync particles from GPU for rendering and surface generation
 	// (no-op if running on CPU)
 	mFluidSystem.SyncParticlesFromGPU();
+
+	// Log per-frame water physics diagnostics
+	WaterDiagnostics::LogCOFLIPFrame(mFluidSystem, mCurrentFPS);
 
 	// Generate surface mesh from particles (throttled for performance).
 	// When async is enabled, launch on a background thread so MC extraction
