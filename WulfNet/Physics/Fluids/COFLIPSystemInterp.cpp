@@ -16,18 +16,8 @@ namespace WulfNet {
 // BSpline/BSplineDerivative now defined as __forceinline in COFLIPSystem.h
 // for cross-TU inlining.  QuadraticBSpline remains file-local.
 
-// Quadratic B-spline (faster than cubic, 3x3x3=27 vs 4x4x4=64 samples)
-// Centered at 0, support [-1.5, 1.5]
-static __forceinline float QuadraticBSpline(float x) {
-    float ax = std::abs(x);
-    if (ax < 0.5f) {
-        return 0.75f - ax * ax;
-    } else if (ax < 1.5f) {
-        float t = 1.5f - ax;
-        return 0.5f * t * t;
-    }
-    return 0.0f;
-}
+// QuadraticBSpline now defined as __forceinline in COFLIPSystem.h
+// for cross-TU inlining (used by both P2G and G2P).
 
 // =============================================================================
 // Grid Helpers — now defined inline in COFLIPSystem.h

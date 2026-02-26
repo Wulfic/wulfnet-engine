@@ -218,6 +218,20 @@ private:
     // B-spline basis functions — inlined for hot-path performance.
     // Called millions of times per frame in P2G/G2P; must be inlineable
     // across translation units (COFLIPSystemCPU.cpp, COFLIPSystemInterp.cpp).
+
+    // Quadratic B-spline (3x3x3=27 samples vs cubic 4x4x4=64 — 2.4x fewer)
+    // Centered at 0, support [-1.5, 1.5]
+    static __forceinline float QuadraticBSpline(float x) {
+        float ax = std::abs(x);
+        if (ax < 0.5f) {
+            return 0.75f - ax * ax;
+        } else if (ax < 1.5f) {
+            float t = 1.5f - ax;
+            return 0.5f * t * t;
+        }
+        return 0.0f;
+    }
+
     static __forceinline float BSpline(float x) {
         float ax = std::abs(x);
         if (ax < 1.0f) {
