@@ -1,10 +1,12 @@
 // Jolt Physics Library (https://github.com/jrouwe/JoltPhysics)
 // SPDX-FileCopyrightText: 2021 Jorrit Rouwe
 // SPDX-License-Identifier: MIT
+// Modified: WulfNet V3 Water Physics Integration
 
 #pragma once
 
 #include <Tests/Test.h>
+#include <WulfNet/Physics/WaterSystemV3.h>
 
 class WaterShapeTest : public Test
 {
@@ -14,7 +16,7 @@ public:
 	// Description of the test
 	virtual const char *	GetDescription() const override
 	{
-		return "Shows buoyancy of various shapes.";
+		return "Shows buoyancy of various shapes using WulfNet V3 SWE water physics.";
 	}
 
 	// Initialize the test
@@ -22,4 +24,9 @@ public:
 
 	// Update the test, called before the physics update
 	virtual void			PrePhysicsUpdate(const PreUpdateParams &inParams) override;
+
+private:
+	WulfNet::Physics::WaterSystemV3 *	mWaterSystem = nullptr;
+	float								mTime = 0.0f;
+	std::vector<JPH::BodyID>			mFloatingBodies;
 };

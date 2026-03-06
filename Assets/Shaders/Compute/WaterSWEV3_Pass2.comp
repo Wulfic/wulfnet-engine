@@ -1,0 +1,50 @@
+#version 450
+// WulfNet Engine V3 Water System
+// Shallow Water Equations - Vulkan Compute Shader Backend - Depth Update Pass
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform WaterConfig {
+    float gridSize;
+    float dt;
+    float gravity;
+    float pipeCrossArea;
+    uint width;
+    uint height;
+} config;
+
+layout(std430, binding = 1) buffer TerrainHeight { float terrainHeight[]; }; // unused, keep layout fixed
+layout(std430, binding = 2) buffer WaterDepth    { float waterDepth[]; };
+layout(std430, binding = 3) buffer FluxMap       { vec4 fluxMap[]; };
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= config.width || y >= config.height) return;
+
+    uint idx = y * config.width + x;
+
+    uint pL = (x > 0) ? idx - 1 : idx;
+    uint pR = (x < config.width - 1) ? idx + 1 : idx;
+    uint pT = (y > 0) ? idx - config.width : idx;
+    uint pB = (y < config.height - 1) ? idx + config.width : idx;
+
+    float currentDepth = waterDepth[idx];
+    vec4 myFlux = fluxMap[idx];
+
+    // Flux OUT mapping
+    float totalFluxOut = myFlux.x + myFlux.y + myFlux.z + myFlux.w;
+    
+    // Flux IN mapping from neighbors' reverse pipes
+    float totalFluxIn = 0.0f;
+    if (x > 0) totalFluxIn += fluxMap[pL].y; // Right pipe of Left neighbor
+    if (x < config.width - 1) totalFluxIn += fluxMap[pR].x; // Left pipe of Right neighbor
+    if (y > 0) totalFluxIn += fluxMap[pT].w; // Bottom pipe of Top neighbor
+    if (y < config.height - 1) totalFluxIn += fluxMap[pB].z; // Top pipe of Bottom neighbor
+
+    float deltaV = (totalFluxIn - totalFluxOut) * config.dt;
+    float newDepth = currentDepth + (deltaV / (config.gridSize * config.gridSize));
+
+    waterDepth[idx] = max(0.0f, newDepth);
+}

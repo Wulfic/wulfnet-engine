@@ -53,11 +53,11 @@
 #include <Utils/SoftBodyCreator.h>
 #include <Utils/ReadData.h>
 #include <Renderer/DebugRendererImp.h>
-#include <Tests/WulfNet/WulfNetFluidTest.h>
-#include <Tests/WulfNet/WulfNetFluidShowcaseTests.h>
 #include <Tests/WulfNet/WulfNetPhysicsTests.h>
+#include <Tests/WulfNet/WulfNetWaterV3Test.h>
+#include <Tests/WulfNet/DamBreakTest.h>
+#include <Tests/WulfNet/WaterBoxTest.h>
 #include <Tests/WulfNet/WulfNetAdvancedTests.h>
-#include <Tests/WulfNet/WulfNetWaterV5Tests.h>
 
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #include <fstream>
@@ -335,12 +335,6 @@ static TestNameAndRTTI sCharacterTests[] =
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WaterShapeTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, BoatTest)
 
-static TestNameAndRTTI sWaterTests[] =
-{
-	{ "Shapes",								JPH_RTTI(WaterShapeTest) },
-	{ "Boat",								JPH_RTTI(BoatTest) },
-};
-
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, VehicleSixDOFTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, VehicleConstraintTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, MotorcycleTest)
@@ -443,27 +437,10 @@ static TestNameAndRTTI sTools[] =
 	{ "Load Snapshot",						JPH_RTTI(LoadSnapshotTest) },
 };
 
-// WulfNet Fluid Tests
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRiverTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterfallTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetPuddleTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetLakeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetViscosityTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetBuoyancyTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetRagdollSwimTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetClothWaterTest)
-
-// WulfNet CO-FLIP Showcase Tests
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidShowcase)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRippleBasinTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTerrainCascadeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidDamBreak3DTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRainStormTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidTsunamiSurgeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidRiverRapidsTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidCalderaEruptionTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetFluidValleyFloodTest)
+// WulfNet Water V3 Test
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV3Test)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, DamBreakTest)
+JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WaterBoxTest)
 
 // WulfNet Physics Integration Tests
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetIFSFractalTest)
@@ -478,27 +455,13 @@ JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetTerrainVisualTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetVolumetricVisualTest)
 JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetAudioVisualTest)
 
-// WulfNet Water V5 Tests (Sheet Water — Shallow Water Equations on a 2D height field)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5Base)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5RipplePondTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5TerrainFlowTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5DamBreakTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5RainHillsTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5TsunamiTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5RiverCanyonTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5CalderaLakeTest)
-JPH_DECLARE_RTTI_FOR_FACTORY(JPH_NO_EXPORT, WulfNetWaterV5FloodValleyTest)
-
 static TestNameAndRTTI sWulfNetTests[] =
 {
-	{ "River (MPM)",						JPH_RTTI(WulfNetRiverTest) },
-	{ "Waterfall (MPM)",					JPH_RTTI(WulfNetWaterfallTest) },
-	{ "Puddle (MPM)",						JPH_RTTI(WulfNetPuddleTest) },
-	{ "Lake (MPM)",							JPH_RTTI(WulfNetLakeTest) },
-	{ "Viscosity Comparison",				JPH_RTTI(WulfNetViscosityTest) },
-	{ "Buoyancy (Float/Sink)",				JPH_RTTI(WulfNetBuoyancyTest) },
-	{ "Ragdoll Swimming",					JPH_RTTI(WulfNetRagdollSwimTest) },
-	{ "Cloth in Water",						JPH_RTTI(WulfNetClothWaterTest) },
+	{ "Water V3 (SWE)",						JPH_RTTI(WulfNetWaterV3Test) },
+	{ "Dam Break (Large Scale)",			JPH_RTTI(DamBreakTest) },
+	{ "Water Box (Glass + Emitter)",		JPH_RTTI(WaterBoxTest) },
+	{ "Water Shapes (V3)",						JPH_RTTI(WaterShapeTest) },
+	{ "Boat (V3)",								JPH_RTTI(BoatTest) },
 	{ "IFS Fractal (GPU Morphing)",			JPH_RTTI(WulfNetIFSFractalTest) },
 	{ "Smoke & Fire",						JPH_RTTI(WulfNetSmokeTest) },
 	{ "Occlusion Culling (CPU)",			JPH_RTTI(WulfNetOcclusionTest) },
@@ -508,22 +471,6 @@ static TestNameAndRTTI sWulfNetTests[] =
 	{ "Terrain Deformation",				JPH_RTTI(WulfNetTerrainVisualTest) },
 	{ "Volumetric Clouds",					JPH_RTTI(WulfNetVolumetricVisualTest) },
 	{ "Spatial Audio & Acoustics",			JPH_RTTI(WulfNetAudioVisualTest) },
-	{ "CO-FLIP: Ripple Basin",				JPH_RTTI(WulfNetFluidRippleBasinTest) },
-	{ "CO-FLIP: Terrain Cascade",			JPH_RTTI(WulfNetFluidTerrainCascadeTest) },
-	{ "CO-FLIP: Dam Break 3D",				JPH_RTTI(WulfNetFluidDamBreak3DTest) },
-	{ "CO-FLIP: Rain Storm",				JPH_RTTI(WulfNetFluidRainStormTest) },
-	{ "CO-FLIP: Tsunami Surge",				JPH_RTTI(WulfNetFluidTsunamiSurgeTest) },
-	{ "CO-FLIP: River Rapids",				JPH_RTTI(WulfNetFluidRiverRapidsTest) },
-	{ "CO-FLIP: Caldera Eruption",			JPH_RTTI(WulfNetFluidCalderaEruptionTest) },
-	{ "CO-FLIP: Valley Flood",				JPH_RTTI(WulfNetFluidValleyFloodTest) },
-	{ "Water V5: Ripple Pond",				JPH_RTTI(WulfNetWaterV5RipplePondTest) },
-	{ "Water V5: Terrain Flow",				JPH_RTTI(WulfNetWaterV5TerrainFlowTest) },
-	{ "Water V5: Dam Break (Sheet)",		JPH_RTTI(WulfNetWaterV5DamBreakTest) },
-	{ "Water V5: Rain on Hills",			JPH_RTTI(WulfNetWaterV5RainHillsTest) },
-	{ "Water V5: Tsunami Coast",			JPH_RTTI(WulfNetWaterV5TsunamiTest) },
-	{ "Water V5: River Canyon",				JPH_RTTI(WulfNetWaterV5RiverCanyonTest) },
-	{ "Water V5: Caldera Lake",				JPH_RTTI(WulfNetWaterV5CalderaLakeTest) },
-	{ "Water V5: Flood Valley",				JPH_RTTI(WulfNetWaterV5FloodValleyTest) },
 };
 
 static TestCategory sAllCategories[] =
@@ -534,14 +481,13 @@ static TestCategory sAllCategories[] =
 	{ "Constraints", sConstraintTests, size(sConstraintTests) },
 	{ "Rig", sRigTests, size(sRigTests) },
 	{ "Character", sCharacterTests, size(sCharacterTests) },
-	{ "Water", sWaterTests, size(sWaterTests) },
 	{ "Vehicle", sVehicleTests, size(sVehicleTests) },
 	{ "Soft Body", sSoftBodyTests, size(sSoftBodyTests) },
 	{ "Hair", sHairTests, size(sHairTests) },
 	{ "Broad Phase", sBroadPhaseTests, size(sBroadPhaseTests) },
 	{ "Convex Collision", sConvexCollisionTests, size(sConvexCollisionTests) },
 	{ "Tools", sTools, size(sTools) },
-	{ "WulfNet Fluids", sWulfNetTests, size(sWulfNetTests) }
+	{ "WulfNet", sWulfNetTests, size(sWulfNetTests) }
 };
 
 //-----------------------------------------------------------------------------
@@ -938,12 +884,12 @@ void SamplesApp::RunAllTests()
 
 void SamplesApp::RunWulfNetTests()
 {
-	// Find WulfNet category and start its first test
+	// Find WulfNet category and start its first test (no auto-advance timer)
 	for (const TestCategory &c : sAllCategories)
 	{
-		if (strcmp(c.mName, "WulfNet Fluids") == 0 && c.mNumTests > 0)
+		if (strcmp(c.mName, "WulfNet") == 0 && c.mNumTests > 0)
 		{
-			mIsRunningAllTests = true;
+			mIsRunningAllTests = false;
 			StartTest(c.mTests[0].mRTTI);
 			return;
 		}

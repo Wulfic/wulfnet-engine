@@ -1,0 +1,60 @@
+#version 450
+// WulfNet Engine V3 Water System
+// Sparse Tile Classification Pass (GLSL)
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform WaterConfig {
+    float gridSize;
+    float dt;
+    float gravity;
+    float pipeCrossArea;
+    uint width;
+    uint height;
+} config;
+
+layout(std430, binding = 1) readonly buffer WaterDepth { float waterDepth[]; };
+layout(std430, binding = 2) readonly buffer FluxMap    { vec4 fluxMap[]; };
+
+// Using an SSBO configured as an explicit append list
+layout(std430, binding = 3) buffer ActiveTileList {
+    uint count; // The engine must set this to 0 before dispatch
+    uvec2 tiles[]; // Size should be (width/8) * (height/8)
+} activeList;
+
+shared uint shared_isActive;
+
+void main() {
+    uint localID = gl_LocalInvocationIndex;
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (localID == 0) {
+        shared_isActive = 0;
+    }
+    barrier();
+
+    bool localActive = false;
+
+    if (x < config.width && y < config.height) {
+        uint idx = y * config.width + x;
+        float d = waterDepth[idx];
+        vec4 f = fluxMap[idx];
+
+        if (d > 0.001f || f.x > 0.001f || f.y > 0.001f || f.z > 0.001f || f.w > 0.001f) {
+            localActive = true;
+        }
+    }
+
+    if (localActive) {
+        atomicOr(shared_isActive, 1);
+    }
+
+    barrier();
+
+    // Leader appends
+    if (localID == 0 && shared_isActive > 0) {
+        uint insertIdx = atomicAdd(activeList.count, 1);
+        activeList.tiles[insertIdx] = gl_WorkGroupID.xy;
+    }
+}

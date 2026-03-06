@@ -36,9 +36,8 @@
 
 #include "Physics/Integration/PhysicsWorld.h"
 
-// Physics - Fluids (CO-FLIP)
-#include "Physics/Fluids/COFLIPSystem.h"
-#include "Physics/Fluids/FluidSurface.h"
+// Physics - Water (SWE 2.5D)
+#include "Physics/WaterSystemV3.h"
 
 // Physics - Material Point Method
 #include "Physics/MPM/ConstitutiveModel.h"

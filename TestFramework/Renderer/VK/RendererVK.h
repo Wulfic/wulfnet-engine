@@ -12,6 +12,8 @@
 class RendererVK : public Renderer, public ComputeSystemVKImpl
 {
 public:
+	JPH_DECLARE_RTTI_VIRTUAL(JPH_NO_EXPORT, RendererVK)
+
 	/// Constructor / destructor
 									RendererVK();
 	virtual							~RendererVK() override;

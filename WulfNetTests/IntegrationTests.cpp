@@ -7,8 +7,6 @@
 
 #include "TestHarness.h"
 #include <WulfNet/WulfNet.h>
-#include <WulfNet/Physics/Fluids/COFLIPSystem.h>
-#include <WulfNet/Physics/Fluids/FluidSurface.h>
 #include <WulfNet/Procedural/IFS/AffineTransform.h>
 #include <WulfNet/Procedural/IFS/TransformPresets.h>
 #include <WulfNet/Procedural/IFS/TransformBlender.h>
@@ -33,97 +31,6 @@ using namespace JPH::literals;
 // =============================================================================
 // Multi-System Integration Tests
 // =============================================================================
-
-void test_Integration_PhysicsAndFluid() {
-    // Run Jolt rigid body physics alongside CO-FLIP fluid simulation
-    PhysicsWorld joltWorld;
-    joltWorld.Initialize();
-
-    COFLIPSystem fluid;
-    COFLIPConfig fluidConfig;
-    fluidConfig.gridSizeX = 16;
-    fluidConfig.gridSizeY = 16;
-    fluidConfig.gridSizeZ = 16;
-    fluidConfig.cellSize = 0.2f;
-    fluidConfig.useGPU = false;
-    fluidConfig.pressureIterations = 3;
-    fluid.Initialize(fluidConfig);
-
-    // Add rigid body
-    JPH::BodyInterface& bi = joltWorld.GetBodyInterface();
-    JPH::BodyCreationSettings bodySettings(
-        new JPH::SphereShape(0.3f),
-        JPH::RVec3(1.0_r, 5.0_r, 1.0_r),
-        JPH::Quat::sIdentity(),
-        JPH::EMotionType::Dynamic,
-        Layers::MOVING
-    );
-    JPH::BodyID sphereId = bi.CreateAndAddBody(bodySettings, JPH::EActivation::Activate);
-
-    // Add fluid particles
-    fluid.AddParticleBox(0.5f, 0.5f, 0.5f, 1.5f, 1.5f, 1.5f);
-
-    // Step both systems in tandem
-    for (int frame = 0; frame < 30; frame++) {
-        float dt = 1.0f / 60.0f;
-        joltWorld.Step(dt);
-        fluid.Step(dt);
-    }
-
-    // Rigid body should have fallen
-    JPH::RVec3 pos = bi.GetCenterOfMassPosition(sphereId);
-    EXPECT_TRUE(pos.GetY() < 5.0f);
-
-    // Fluid should still have particles
-    EXPECT_TRUE(fluid.GetActiveParticleCount() > 0);
-
-    bi.RemoveBody(sphereId);
-    bi.DestroyBody(sphereId);
-    joltWorld.Shutdown();
-    fluid.Shutdown();
-}
-
-void test_Integration_FluidAndSurface() {
-    // Run fluid sim and extract surface every Nth frame
-    COFLIPSystem fluid;
-    COFLIPConfig fluidConfig;
-    fluidConfig.gridSizeX = 16;
-    fluidConfig.gridSizeY = 16;
-    fluidConfig.gridSizeZ = 16;
-    fluidConfig.cellSize = 0.2f;
-    fluidConfig.useGPU = false;
-    fluidConfig.pressureIterations = 3;
-    fluid.Initialize(fluidConfig);
-
-    FluidSurface surface;
-    FluidSurfaceConfig surfConfig;
-    surfConfig.gridSizeX = 16;
-    surfConfig.gridSizeY = 16;
-    surfConfig.gridSizeZ = 16;
-    surfConfig.cellSize = 0.2f;
-    surfConfig.isoLevel = 0.3f;
-    surfConfig.useGPU = false;
-    surface.Initialize(surfConfig);
-
-    fluid.AddParticleBox(0.5f, 0.5f, 0.5f, 2.0f, 2.0f, 2.0f);
-
-    // Simulate 20 frames, extract surface every 5th frame
-    for (int frame = 0; frame < 20; frame++) {
-        fluid.Step(1.0f / 60.0f);
-
-        if (frame % 5 == 0) {
-            surface.GenerateSurface(fluid);
-            // Surface stats should update
-            const FluidSurfaceStats& stats = surface.GetStats();
-            EXPECT_TRUE(stats.totalTimeMs >= 0.0f);
-        }
-    }
-
-    EXPECT_TRUE(true); // No crashes throughout
-
-    fluid.Shutdown();
-    surface.Shutdown();
-}
 
 void test_Integration_RasterizerAndOcclusion() {
     // Render scene with rasterizer, then use occlusion culler
@@ -268,105 +175,6 @@ void test_Integration_SystemMonitorDuringPhysics() {
 // Stress Tests
 // =============================================================================
 
-void test_Stress_FluidHighParticleCount() {
-    COFLIPSystem fluid;
-    COFLIPConfig config;
-    config.gridSizeX = 32;
-    config.gridSizeY = 32;
-    config.gridSizeZ = 32;
-    config.cellSize = 0.1f;
-    config.useGPU = false;
-    config.pressureIterations = 2; // Reduced for speed
-    fluid.Initialize(config);
-
-    // Add large volume of particles
-    fluid.AddParticleBox(0.5f, 0.5f, 0.5f, 2.5f, 2.5f, 2.5f);
-    uint32_t count = fluid.GetActiveParticleCount();
-    EXPECT_TRUE(count > 100);
-
-    // Step a few frames — should complete without crash or NaN
-    for (int i = 0; i < 5; i++) {
-        fluid.Step(1.0f / 60.0f);
-    }
-
-    // Verify all particles are finite
-    bool allFinite = true;
-    for (uint32_t i = 0; i < fluid.GetActiveParticleCount(); i++) {
-        const auto& p = fluid.GetParticles()[i];
-        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
-            allFinite = false;
-            break;
-        }
-    }
-    EXPECT_TRUE(allFinite);
-
-    fluid.Shutdown();
-}
-
-void test_Stress_MultipleFluidSystems() {
-    // Run multiple fluid systems simultaneously
-    COFLIPSystem fluid1, fluid2;
-
-    COFLIPConfig config;
-    config.gridSizeX = 8;
-    config.gridSizeY = 8;
-    config.gridSizeZ = 8;
-    config.cellSize = 0.5f;
-    config.useGPU = false;
-    config.pressureIterations = 2;
-
-    fluid1.Initialize(config);
-    fluid2.Initialize(config);
-
-    fluid1.AddParticleSphere(2.0f, 2.0f, 2.0f, 1.0f);
-    fluid2.AddParticleBox(1.0f, 1.0f, 1.0f, 3.0f, 3.0f, 3.0f);
-
-    for (int i = 0; i < 10; i++) {
-        fluid1.Step(1.0f / 60.0f);
-        fluid2.Step(1.0f / 60.0f);
-    }
-
-    // Both should still be valid
-    EXPECT_TRUE(fluid1.GetActiveParticleCount() > 0);
-    EXPECT_TRUE(fluid2.GetActiveParticleCount() > 0);
-
-    fluid1.Shutdown();
-    fluid2.Shutdown();
-}
-
-void test_Stress_SurfaceExtractionLargeGrid() {
-    FluidSurface surface;
-    FluidSurfaceConfig config;
-    config.gridSizeX = 32;
-    config.gridSizeY = 32;
-    config.gridSizeZ = 32;
-    config.cellSize = 0.1f;
-    config.isoLevel = 0.5f;
-    config.useGPU = false;
-    surface.Initialize(config);
-
-    // Fill a sphere density on a larger grid
-    float cx = 16.0f, cy = 16.0f, cz = 16.0f;
-    float radius = 10.0f;
-    for (int k = 0; k < 32; k++)
-        for (int j = 0; j < 32; j++)
-            for (int i = 0; i < 32; i++) {
-                float dx = static_cast<float>(i) - cx;
-                float dy = static_cast<float>(j) - cy;
-                float dz = static_cast<float>(k) - cz;
-                float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-                surface.SetDensity(i, j, k, std::max(0.0f, 1.0f - dist / radius));
-            }
-
-    surface.ExtractSurface();
-
-    // Should produce significant geometry
-    EXPECT_TRUE(surface.GetVertexCount() > 100);
-    EXPECT_TRUE(surface.GetTriangleCount() > 50);
-
-    surface.Shutdown();
-}
-
 void test_Stress_RapidRasterizerRender() {
     SoftwareRasterizer rast;
     SoftRasterizerConfig config;
@@ -466,16 +274,11 @@ void test_Stress_BlenderContinuousMorphing() {
 
 void RegisterIntegrationTests() {
     // Multi-system integration
-    RUN_TEST("Integration_PhysicsAndFluid", test_Integration_PhysicsAndFluid);
-    RUN_TEST("Integration_FluidAndSurface", test_Integration_FluidAndSurface);
     RUN_TEST("Integration_RasterizerAndOcclusion", test_Integration_RasterizerAndOcclusion);
     RUN_TEST("Integration_FractalAndRasterizer", test_Integration_FractalAndRasterizer);
     RUN_TEST("Integration_SystemMonitorDuringPhysics", test_Integration_SystemMonitorDuringPhysics);
 
     // Stress tests
-    RUN_TEST("Stress_FluidHighParticleCount", test_Stress_FluidHighParticleCount);
-    RUN_TEST("Stress_MultipleFluidSystems", test_Stress_MultipleFluidSystems);
-    RUN_TEST("Stress_SurfaceExtractionLargeGrid", test_Stress_SurfaceExtractionLargeGrid);
     RUN_TEST("Stress_RapidRasterizerRender", test_Stress_RapidRasterizerRender);
     RUN_TEST("Stress_BlenderContinuousMorphing", test_Stress_BlenderContinuousMorphing);
 }

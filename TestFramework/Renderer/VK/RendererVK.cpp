@@ -31,6 +31,11 @@ JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #endif
 JPH_SUPPRESS_WARNINGS_STD_END
 
+JPH_IMPLEMENT_RTTI_VIRTUAL(RendererVK)
+{
+	JPH_ADD_BASE_CLASS(RendererVK, ComputeSystemVKImpl)
+}
+
 RendererVK::RendererVK()
 {
 	// Ensure ComputeSystem doesn't get destructed

@@ -38,7 +38,6 @@ namespace WulfNet {
 // Forward declarations
 struct MPMParticle;
 struct MPMMaterialParams;
-struct FluidParticle;
 class PhysicsWorld;
 
 // =============================================================================
@@ -191,12 +190,6 @@ public:
                          const MPMMaterialParams& params,
                          JPH::PhysicsSystem& joltPhysics,
                          float dt);
-
-    /// Overload for FluidParticle (simpler particle type)
-    void ComputeCouplingFluid(FluidParticle* particles,
-                              uint32_t particleCount,
-                              JPH::PhysicsSystem& joltPhysics,
-                              float dt);
 
     /// Apply accumulated forces to Jolt bodies
     /// Call AFTER ComputeCoupling, during the Jolt step preparation

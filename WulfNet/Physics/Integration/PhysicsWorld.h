@@ -28,7 +28,6 @@ namespace WulfNet {
 // Forward Declarations
 // =============================================================================
 
-class FluidSystem;
 class MPMSystem;
 class GaseousSystem;
 class DestructionSystem;
@@ -225,7 +224,6 @@ public:
     // ==========================================================================
 
     // These will be implemented in future phases
-    // FluidSystem& GetFluidSystem();
     // MPMSystem& GetMPMSystem();
     // GaseousSystem& GetGaseousSystem();
     // DestructionSystem& GetDestructionSystem();
@@ -265,7 +263,6 @@ private:
     Statistics m_statistics;
 
     // Extended physics systems (future phases)
-    // std::unique_ptr<FluidSystem> m_fluidSystem;
     // std::unique_ptr<MPMSystem> m_mpmSystem;
     // std::unique_ptr<GaseousSystem> m_gaseousSystem;
     // std::unique_ptr<DestructionSystem> m_destructionSystem;

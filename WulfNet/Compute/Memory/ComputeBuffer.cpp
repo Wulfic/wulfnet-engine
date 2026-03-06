@@ -4,7 +4,6 @@
 
 #include "WulfNet/Compute/Memory/ComputeBuffer.h"
 #include "WulfNet/Compute/Vulkan/VulkanContext.h"
-#include "WulfNet/Physics/Fluids/COFLIPSystem.h"  // For template instantiations
 #include "WulfNet/Core/Logging/Logger.h"
 #include "WulfNet/Core/Profiling/Profiler.h"
 
@@ -656,9 +655,5 @@ template class ComputeBuffer<int32_t>;
 template class ComputeBuffer<uint32_t>;
 template class ComputeBuffer<Vec4>;
 template class ComputeBuffer<ParticleData>;
-
-// CO-FLIP fluid simulation types
-template class ComputeBuffer<COFLIPParticle>;
-template class ComputeBuffer<COFLIPCell>;
 
 } // namespace WulfNet

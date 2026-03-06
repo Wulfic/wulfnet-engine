@@ -48,13 +48,10 @@ endif()
 set_target_properties(WulfNetTests PROPERTIES FOLDER "WulfNet/Tests")
 
 # =============================================================================
-# WulfNet Extended Tests (CO-FLIP, FluidSurface, SystemMonitor, Advanced Physics, Integration)
+# WulfNet Extended Tests (SystemMonitor, Advanced Physics, Integration, Water V3)
 # =============================================================================
 set(WULFNET_EXTENDED_TEST_SRC_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/WulfNetExtendedTests.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/COFLIPSystemTests.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/FluidSurfaceTests.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SystemMonitorTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WulfNetExtendedTests.cpp      ${CMAKE_CURRENT_SOURCE_DIR}/WaterSystemV3Tests.cpp    ${CMAKE_CURRENT_SOURCE_DIR}/SystemMonitorTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AdvancedPhysicsTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/IntegrationTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ConstitutiveModelTests.cpp
@@ -112,8 +109,6 @@ add_test(NAME WulfNetTests COMMAND WulfNetTests)
 add_test(NAME WulfNetExtendedTests COMMAND WulfNetExtendedTests)
 
 # Add per-suite CTest entries for fine-grained test selection
-add_test(NAME WulfNetExtended_COFLIP COMMAND WulfNetExtendedTests --suite=coflip)
-add_test(NAME WulfNetExtended_Surface COMMAND WulfNetExtendedTests --suite=surface)
 add_test(NAME WulfNetExtended_Monitor COMMAND WulfNetExtendedTests --suite=monitor)
 add_test(NAME WulfNetExtended_Physics COMMAND WulfNetExtendedTests --suite=physics)
 add_test(NAME WulfNetExtended_Integration COMMAND WulfNetExtendedTests --suite=integration)

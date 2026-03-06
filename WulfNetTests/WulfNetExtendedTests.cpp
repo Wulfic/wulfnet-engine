@@ -1,13 +1,11 @@
 // =============================================================================
 // WulfNet Engine - Extended Test Suite Entry Point
 // =============================================================================
-// Runs all WulfNet extended test suites: CO-FLIP, FluidSurface, SystemMonitor,
-// advanced physics, and integration/stress tests.
+// Runs all WulfNet extended test suites: SystemMonitor,
+// advanced physics, integration/stress tests, water V3, and more.
 //
 // Usage:
 //   WulfNetExtendedTests                 # Run all suites
-//   WulfNetExtendedTests --suite=coflip  # Run only CO-FLIP tests
-//   WulfNetExtendedTests --suite=surface # Run only FluidSurface tests
 //   WulfNetExtendedTests --suite=monitor # Run only SystemMonitor tests
 //   WulfNetExtendedTests --suite=physics # Run only advanced physics tests
 //   WulfNetExtendedTests --suite=integration # Run only integration tests
@@ -36,8 +34,6 @@ int main(int argc, char** argv) {
         if (arg == "--help" || arg == "-h") {
             std::cout << "WulfNet Extended Tests" << std::endl;
             std::cout << "  --suite=all          Run all test suites (default)" << std::endl;
-            std::cout << "  --suite=coflip       CO-FLIP fluid system tests" << std::endl;
-            std::cout << "  --suite=surface      Fluid surface extraction tests" << std::endl;
             std::cout << "  --suite=monitor      System monitor tests" << std::endl;
             std::cout << "  --suite=physics      Advanced physics tests" << std::endl;
             std::cout << "  --suite=integration  Integration & stress tests" << std::endl;
@@ -54,6 +50,7 @@ int main(int argc, char** argv) {
             std::cout << "  --suite=acoustic     Acoustic system tests" << std::endl;
             std::cout << "  --suite=spatial      Spatial audio tests" << std::endl;
             std::cout << "  --suite=benchmark    Performance benchmarks" << std::endl;
+            std::cout << "  --suite=water        Water system V3 tests" << std::endl;
             return 0;
         }
     }
@@ -61,24 +58,6 @@ int main(int argc, char** argv) {
     std::cout << "=== WulfNet Engine - Extended Test Suite ===" << std::endl;
     std::cout << "Suite: " << selectedSuite << std::endl;
     std::cout << std::endl;
-
-    // =========================================================================
-    // CO-FLIP System Tests
-    // =========================================================================
-    if (selectedSuite == "all" || selectedSuite == "coflip") {
-        std::cout << "--- CO-FLIP System Tests ---" << std::endl;
-        RegisterCOFLIPSystemTests();
-        std::cout << std::endl;
-    }
-
-    // =========================================================================
-    // Fluid Surface Tests
-    // =========================================================================
-    if (selectedSuite == "all" || selectedSuite == "surface") {
-        std::cout << "--- Fluid Surface Tests ---" << std::endl;
-        RegisterFluidSurfaceTests();
-        std::cout << std::endl;
-    }
 
     // =========================================================================
     // System Monitor Tests
@@ -222,6 +201,21 @@ int main(int argc, char** argv) {
         std::cout << "--- Performance Benchmarks ---" << std::endl;
         RegisterPerformanceBenchmarks();
         std::cout << std::endl;
+    }
+
+    // =========================================================================
+    // Water System V3 Tests
+    // =========================================================================
+    if (selectedSuite == "all" || selectedSuite == "water") {
+        // Enable full logging for water diagnostics
+        auto prevLevel = WulfNet::Logger::Get().GetMinLevel();
+        WulfNet::Logger::Get().SetMinLevel(WulfNet::LogLevel::Trace);
+
+        std::cout << "--- Water System V3 Tests ---" << std::endl;
+        RegisterWaterSystemV3Tests();
+        std::cout << std::endl;
+
+        WulfNet::Logger::Get().SetMinLevel(prevLevel);
     }
 
     return PrintTestReport();

@@ -4,7 +4,6 @@
 
 #include "MPMRigidCoupling.h"
 #include "ConstitutiveModel.h"
-#include "../Fluids/FluidParticle.h"
 
 // Jolt includes
 #include <Jolt/Jolt.h>
@@ -570,78 +569,6 @@ void MPMRigidCoupling::ComputeCoupling(
 
     m_stats.maxForceApplied = maxForce;
     m_stats.totalForceApplied = totalForce;
-}
-
-// =============================================================================
-// Main Coupling: FluidParticle ↔ Rigid Bodies
-// =============================================================================
-
-void MPMRigidCoupling::ComputeCouplingFluid(
-    FluidParticle* particles,
-    uint32_t particleCount,
-    JPH::PhysicsSystem& joltPhysics,
-    float dt)
-{
-    if (!m_initialized || !particles || particleCount == 0) return;
-
-    // Sync body states and clear accumulators
-    SyncBodyStates(joltPhysics);
-    ClearAccumulators();
-
-    uint32_t activeBodies = 0;
-    for (const auto& b : m_bodies) {
-        if (b.enabled) activeBodies++;
-    }
-    if (activeBodies == 0) return;
-
-    for (uint32_t pi = 0; pi < particleCount; ++pi) {
-        FluidParticle& p = particles[pi];
-
-        for (uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
-            CoupledRigidBody& body = m_bodies[bi];
-            if (!body.enabled) continue;
-
-            float nx, ny, nz;
-            float dist = ComputeBodySDF(body, p.x, p.y, p.z, nx, ny, nz);
-
-            if (dist > m_config.interactionRadius) continue;
-
-            // Particle → Body force
-            if (m_config.enableParticleToBody) {
-                float penetration = m_config.interactionRadius - dist;
-                float forceScale = std::min(
-                    m_config.penaltyStiffness * penetration,
-                    m_config.maxCouplingForce
-                );
-
-                float fx = forceScale * nx;
-                float fy = forceScale * ny;
-                float fz = forceScale * nz;
-
-                AccumulateForceOnBody(body, fx, fy, fz, p.x, p.y, p.z);
-            }
-
-            // Body → Particle velocity correction
-            if (m_config.enableBodyToParticle && dist < 0.0f) {
-                float surfVx, surfVy, surfVz;
-                GetBodySurfaceVelocity(bi, p.x, p.y, p.z, surfVx, surfVy, surfVz);
-
-                float relVn = (p.vx - surfVx) * nx + (p.vy - surfVy) * ny + (p.vz - surfVz) * nz;
-                if (relVn < 0.0f) {
-                    float strength = body.couplingStrength;
-                    p.vx -= strength * relVn * nx;
-                    p.vy -= strength * relVn * ny;
-                    p.vz -= strength * relVn * nz;
-
-                    // Push out
-                    float pushDist = -dist * strength;
-                    p.x += pushDist * nx;
-                    p.y += pushDist * ny;
-                    p.z += pushDist * nz;
-                }
-            }
-        }
-    }
 }
 
 // =============================================================================

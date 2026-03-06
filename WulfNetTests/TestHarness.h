@@ -158,8 +158,6 @@ inline void RunTest(const char* name, void (*testFunc)()) {
 // Test Suite Registration (forward declarations)
 // =============================================================================
 
-void RegisterCOFLIPSystemTests();
-void RegisterFluidSurfaceTests();
 void RegisterSystemMonitorTests();
 void RegisterAdvancedPhysicsTests();
 void RegisterIntegrationTests();
@@ -176,6 +174,7 @@ void RegisterAudioEngineTests();
 void RegisterAcousticSystemTests();
 void RegisterSpatialAudioTests();
 void RegisterPerformanceBenchmarks();
+void RegisterWaterSystemV3Tests();
 
 // =============================================================================
 // Report Printer

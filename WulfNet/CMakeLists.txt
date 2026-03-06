@@ -22,12 +22,8 @@ set(WULFNET_SOURCES
     # Physics Integration
     Physics/Integration/PhysicsWorld.cpp
 
-    # Physics - Fluids (CO-FLIP)
-    Physics/Fluids/COFLIPSystem.cpp
-    Physics/Fluids/COFLIPSystemCPU.cpp
-    Physics/Fluids/COFLIPSystemInterp.cpp
-    Physics/Fluids/FluidSurface.cpp
-    Physics/Fluids/FluidSurfaceMarch.cpp
+    # Physics - Water (SWE 2.5D)
+    Physics/WaterSystemV3.cpp
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.cpp
@@ -47,7 +43,6 @@ set(WULFNET_SOURCES
     Compute/Vulkan/VulkanContext.cpp
     Compute/Memory/ComputeBuffer.cpp
     Compute/Shaders/ComputePipeline.cpp
-    Compute/Fluids/VulkanFluidCompute.cpp
     Compute/Fluids/SWEComputeGPU.cpp
     Compute/Reduction/ParallelReduction.cpp
 
@@ -93,9 +88,8 @@ set(WULFNET_HEADERS
     # Physics Integration
     Physics/Integration/PhysicsWorld.h
 
-    # Physics - Fluids (CO-FLIP)
-    Physics/Fluids/COFLIPSystem.h
-    Physics/Fluids/FluidSurface.h
+    # Physics - Water (SWE 2.5D)
+    Physics/WaterSystemV3.h
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.h
@@ -115,7 +109,6 @@ set(WULFNET_HEADERS
     Compute/Vulkan/VulkanContext.h
     Compute/Memory/ComputeBuffer.h
     Compute/Shaders/ComputePipeline.h
-    Compute/Fluids/VulkanFluidCompute.h
     Compute/Fluids/SWEComputeGPU.h
     Compute/Reduction/ParallelReduction.h
 
