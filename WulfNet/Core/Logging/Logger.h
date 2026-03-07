@@ -17,6 +17,8 @@
 #include <chrono>
 #include <functional>
 
+#include "API.h"
+
 namespace WulfNet {
 
 // =============================================================================
@@ -65,7 +67,7 @@ struct LogEntry {
 // Log Sink Interface
 // =============================================================================
 
-class ILogSink {
+class WULFNET_API ILogSink {
 public:
     virtual ~ILogSink() = default;
     virtual void Write(const LogEntry& entry) = 0;
@@ -76,7 +78,7 @@ public:
 // Console Log Sink
 // =============================================================================
 
-class ConsoleLogSink : public ILogSink {
+class WULFNET_API ConsoleLogSink : public ILogSink {
 public:
     ConsoleLogSink(bool useColors = true);
     void Write(const LogEntry& entry) override;
@@ -90,7 +92,7 @@ private:
 // File Log Sink
 // =============================================================================
 
-class FileLogSink : public ILogSink {
+class WULFNET_API FileLogSink : public ILogSink {
 public:
     explicit FileLogSink(const std::string& filepath);
     ~FileLogSink();
@@ -111,7 +113,7 @@ private:
 
 using LogCallback = std::function<void(const LogEntry&)>;
 
-class CallbackLogSink : public ILogSink {
+class WULFNET_API CallbackLogSink : public ILogSink {
 public:
     explicit CallbackLogSink(LogCallback callback);
     void Write(const LogEntry& entry) override;
@@ -125,14 +127,37 @@ private:
 // Logger Class
 // =============================================================================
 
-class Logger {
+class WULFNET_API Logger {
 public:
     // Singleton access
     static Logger& Get();
 
-    // Configuration
-    void SetMinLevel(LogLevel level) { m_minLevel = level; }
-    LogLevel GetMinLevel() const { return m_minLevel; }
+    // =========================================================================
+    // Static Convenience API
+    // =========================================================================
+    // These delegate to Get() internally, providing a cleaner call-site
+    // for simple usage (e.g. Logger::Initialize(), Logger::SetMinLevel()).
+
+    /// Initialize the logger with a default console sink.
+    /// Safe to call multiple times — subsequent calls are no-ops.
+    static void Initialize();
+
+    /// Initialize the logger with a console sink and optional file sink.
+    static void Initialize(LogLevel minLevel, bool logToFile = false,
+                           const std::string& logFilePath = "wulfnet.log");
+
+    /// Static overload: set minimum log level on the singleton.
+    static void SetMinLevel(LogLevel level) { Get().m_minLevel = level; }
+
+    /// Static overload: get minimum log level from the singleton.
+    static LogLevel GetMinLevel() { return Get().m_minLevel; }
+
+    // =========================================================================
+    // Instance Configuration
+    // =========================================================================
+
+    void SetMinLevelInstance(LogLevel level) { m_minLevel = level; }
+    LogLevel GetMinLevelInstance() const { return m_minLevel; }
 
     // Sink management
     void AddSink(std::shared_ptr<ILogSink> sink);

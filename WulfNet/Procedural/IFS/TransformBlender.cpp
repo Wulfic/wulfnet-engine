@@ -38,8 +38,8 @@ void TransformBlender::Update(float dt, float speed) {
     m_t += dt * speed;
 }
 
-std::vector<GPUMat4x4> TransformBlender::GetBlendedMatrices() const {
-    std::vector<GPUMat4x4> matrices;
+std::vector<Mat4> TransformBlender::GetBlendedMatrices() const {
+    std::vector<Mat4> matrices;
     matrices.reserve(m_blendedSet.size());
     for (const auto& inst : m_blendedSet) {
         matrices.push_back(AffineTransform::FromInstructions(inst));

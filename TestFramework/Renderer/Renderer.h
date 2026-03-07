@@ -73,8 +73,11 @@ public:
 	/// Get the light frustum (only valid between BeginFrame() / EndFrame())
 	const Frustum &					GetLightFrustum() const				{ JPH_ASSERT(mInFrame); return mLightFrustum; }
 
-	/// How many frames our pipeline is
-	inline static const uint		cFrameCount = 2;
+	/// How many frames our pipeline is.
+	/// 6 buffers gives enough headroom for high-FPS / uncapped modes:
+	/// DWM holds 1-2 buffers for composition, leaving 4-5 available for
+	/// the CPU/GPU to render ahead without stalling on the fence.
+	inline static const uint		cFrameCount = 6;
 
 	/// Size of the shadow map will be cShadowMapSize x cShadowMapSize pixels
 	inline static const uint		cShadowMapSize = 4096;
@@ -90,6 +93,15 @@ public:
 
 	/// Create a platform specific Renderer instance
 	static Renderer *				sCreate();
+
+	/// VSync control (overridden by platform-specific renderers)
+	virtual void					SetVSync(bool inEnabled)			{}
+	virtual bool					GetVSync() const					{ return true; }
+
+	/// Rendering diagnostics (overridden by platform-specific renderers)
+	virtual bool					IsTearingSupported() const			{ return false; }
+	virtual float					GetPresentTimeMs() const			{ return 0.0f; }
+	virtual float					GetFenceWaitTimeMs() const			{ return 0.0f; }
 
 protected:
 	struct VertexShaderConstantBuffer
@@ -113,7 +125,7 @@ protected:
 	RVec3							mBaseOffset { RVec3::sZero() };		///< Offset to subtract from the camera position to deal with large worlds
 	Frustum							mCameraFrustum;
 	Frustum							mLightFrustum;
-	uint							mFrameIndex = 0;					///< Current frame index (0 or 1)
+	uint							mFrameIndex = 0;					///< Current frame index (0..cFrameCount-1)
 	VertexShaderConstantBuffer		mVSBuffer;
 	VertexShaderConstantBuffer		mVSBufferOrtho;
 	PixelShaderConstantBuffer		mPSBuffer;

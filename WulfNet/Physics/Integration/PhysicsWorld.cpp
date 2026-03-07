@@ -6,6 +6,13 @@
 #include "../../Core/Logging/Logger.h"
 #include "../../Core/Profiling/Profiler.h"
 
+// Extended physics systems
+#include "../Fluids/FluidSystem.h"
+#include "../Gaseous/GaseousSystem.h"
+#include "../Destruction/DestructionSystem.h"
+#include "../Terrain/TerrainDeformation.h"
+#include "../MPM/MPMRigidCoupling.h"
+
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -279,6 +286,9 @@ bool PhysicsWorld::Initialize(const PhysicsWorldSettings& settings) {
     m_physicsSystem->SetContactListener(m_contactListener.get());
     m_physicsSystem->SetBodyActivationListener(m_bodyActivationListener.get());
 
+    // Initialize extended physics systems (fluids, gaseous, destruction, etc.)
+    InitExtendedSystems();
+
     m_initialized = true;
     WULFNET_INFO("Physics", "PhysicsWorld initialized successfully");
 
@@ -291,6 +301,9 @@ void PhysicsWorld::Shutdown() {
     }
 
     WULFNET_INFO("Physics", "Shutting down PhysicsWorld...");
+
+    // Shut down extended systems first (they may reference Jolt)
+    ShutdownExtendedSystems();
 
     // Clear listeners first
     if (m_physicsSystem) {
@@ -330,6 +343,9 @@ JPH::EPhysicsUpdateError PhysicsWorld::Step(float deltaTime) {
         m_tempAllocator.get(),
         m_jobSystem.get()
     );
+
+    // Step extended physics systems (fluids, gas, destruction coupling)
+    StepExtendedSystems(deltaTime);
 
     // Update statistics
     m_statistics.lastStepTimeMs = static_cast<float>(timer.ElapsedMilliseconds());
@@ -430,6 +446,135 @@ void PhysicsWorld::SetBodyActivatedCallback(BodyActivatedCallback callback) {
 
 void PhysicsWorld::SetBodyDeactivatedCallback(BodyDeactivatedCallback callback) {
     m_onBodyDeactivated = std::move(callback);
+}
+
+// =============================================================================
+// Extended Physics Systems — Init / Shutdown / Step
+// =============================================================================
+
+void PhysicsWorld::InitExtendedSystems() {
+    WULFNET_ZONE_NAMED("PhysicsWorld::InitExtendedSystems");
+
+    // --- Fluid System (SWE 2.5D) ---
+    if (m_settings.enableFluidPhysics) {
+        WULFNET_INFO("Physics", "Initializing FluidSystem...");
+        FluidSystemConfig fluidCfg;  // default config
+        m_fluidSystem = std::make_unique<FluidSystem>(fluidCfg, m_physicsSystem.get());
+        WULFNET_INFO("Physics", "FluidSystem initialized");
+    }
+
+    // --- Gaseous System (3D Euler) ---
+    if (m_settings.enableGaseousPhysics) {
+        WULFNET_INFO("Physics", "Initializing GaseousSystem...");
+        m_gaseousSystem = std::make_unique<GaseousSystem>();
+        GaseousSystemConfig gasCfg;  // default config
+        if (m_gaseousSystem->Initialize(gasCfg)) {
+            WULFNET_INFO("Physics", "GaseousSystem initialized");
+        } else {
+            WULFNET_WARNING("Physics", "GaseousSystem initialization failed");
+            m_gaseousSystem.reset();
+        }
+    }
+
+    // --- Destruction System ---
+    if (m_settings.enableDestructionPhysics) {
+        WULFNET_INFO("Physics", "Initializing DestructionSystem...");
+        m_destructionSystem = std::make_unique<DestructionSystem>();
+        DestructionConfig destructCfg;  // default config
+        if (m_destructionSystem->Initialize(destructCfg)) {
+            WULFNET_INFO("Physics", "DestructionSystem initialized");
+        } else {
+            WULFNET_WARNING("Physics", "DestructionSystem initialization failed");
+            m_destructionSystem.reset();
+        }
+    }
+
+    // --- Terrain Deformation (always available when physics is initialized) ---
+    {
+        WULFNET_DEBUG("Physics", "Initializing TerrainDeformation...");
+        m_terrainDeformation = std::make_unique<TerrainDeformation>();
+        TerrainDeformConfig terrainCfg;  // default config
+        if (m_terrainDeformation->Initialize(terrainCfg)) {
+            WULFNET_DEBUG("Physics", "TerrainDeformation initialized");
+        } else {
+            WULFNET_WARNING("Physics", "TerrainDeformation initialization failed");
+            m_terrainDeformation.reset();
+        }
+    }
+
+    // --- MPM-Rigid Coupling (requires MPM physics) ---
+    if (m_settings.enableMPMPhysics) {
+        WULFNET_INFO("Physics", "Initializing MPMRigidCoupling...");
+        m_mpmCoupling = std::make_unique<MPMRigidCoupling>();
+        MPMCouplingConfig mpmCfg;  // default config
+        if (m_mpmCoupling->Initialize(mpmCfg)) {
+            WULFNET_INFO("Physics", "MPMRigidCoupling initialized");
+        } else {
+            WULFNET_WARNING("Physics", "MPMRigidCoupling initialization failed");
+            m_mpmCoupling.reset();
+        }
+    }
+}
+
+void PhysicsWorld::ShutdownExtendedSystems() {
+    WULFNET_ZONE_NAMED("PhysicsWorld::ShutdownExtendedSystems");
+
+    // Reverse order of initialization
+
+    if (m_mpmCoupling) {
+        m_mpmCoupling->Shutdown();
+        m_mpmCoupling.reset();
+    }
+
+    if (m_terrainDeformation) {
+        m_terrainDeformation->Shutdown();
+        m_terrainDeformation.reset();
+    }
+
+    if (m_destructionSystem) {
+        m_destructionSystem->Shutdown();
+        m_destructionSystem.reset();
+    }
+
+    if (m_gaseousSystem) {
+        m_gaseousSystem->Shutdown();
+        m_gaseousSystem.reset();
+    }
+
+    // FluidSystem has no Shutdown() — just destroy it
+    m_fluidSystem.reset();
+}
+
+void PhysicsWorld::StepExtendedSystems(float deltaTime) {
+    WULFNET_ZONE_NAMED("PhysicsWorld::StepExtendedSystems");
+
+    // --- Fluid simulation (SWE) + buoyancy coupling ---
+    if (m_fluidSystem) {
+        WULFNET_ZONE_NAMED("PhysicsWorld::StepFluids");
+        m_fluidSystem->StepSimulationCPU(deltaTime);
+        m_fluidSystem->ApplyBuoyancyForces(m_jobSystem.get());
+    }
+
+    // --- Gaseous simulation (Euler 3D) ---
+    if (m_gaseousSystem) {
+        WULFNET_ZONE_NAMED("PhysicsWorld::StepGas");
+        m_gaseousSystem->Step(deltaTime);
+    }
+
+    // --- Destruction (evaluate pending fractures, sync fragments) ---
+    if (m_destructionSystem) {
+        WULFNET_ZONE_NAMED("PhysicsWorld::StepDestruction");
+        m_destructionSystem->Step(deltaTime, m_physicsSystem.get());
+    }
+
+    // --- Terrain deformation is event-driven, no per-frame step needed.
+    //     Dirty regions are queried by the caller via GetTerrainDeformation()->HasDirtyRegion().
+
+    // --- MPM-Rigid coupling ---
+    // Note: MPM particles would be driven by an MPMSystem (not yet wired).
+    // When MPMSystem is added, this is where we'd call:
+    //   m_mpmCoupling->ComputeCoupling(particles, count, params, *m_physicsSystem, deltaTime);
+    //   m_mpmCoupling->ApplyForcesToBodies(*m_physicsSystem);
 }
 
 } // namespace WulfNet

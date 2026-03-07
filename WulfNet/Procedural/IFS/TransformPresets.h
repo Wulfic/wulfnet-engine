@@ -45,7 +45,7 @@ std::vector<TransformInstructions> GenerateProcedural(const ProceduralConfig& co
                                                        std::mt19937& rng);
 
 /// Build GPU-ready affine matrices from transform instructions
-std::vector<GPUMat4x4> BuildMatrices(const std::vector<TransformInstructions>& instructions);
+std::vector<Mat4> BuildMatrices(const std::vector<TransformInstructions>& instructions);
 
 } // namespace TransformPresets
 

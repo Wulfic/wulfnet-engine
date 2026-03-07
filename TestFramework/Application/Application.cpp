@@ -14,6 +14,9 @@
 #include <Renderer/DebugRendererImp.h>
 #ifdef JPH_PLATFORM_WINDOWS
 	#include <crtdbg.h>
+	#include <thread>
+	#include <timeapi.h>
+	#pragma comment(lib, "winmm.lib")
 	#include <Input/Win/KeyboardWin.h>
 	#include <Input/Win/MouseWin.h>
 	#include <Window/ApplicationWindowWin.h>
@@ -45,6 +48,12 @@ Application::Application(const char *inApplicationName, [[maybe_unused]] const S
 #if defined(JPH_PLATFORM_WINDOWS) && defined(_DEBUG)
 	// Enable leak detection
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
+
+#ifdef JPH_PLATFORM_WINDOWS
+	// Set Windows timer resolution to 1 ms so that sleep_for() is precise
+	// enough for CPU-side frame rate limiting (default is ~15.6 ms).
+	timeBeginPeriod(1);
 #endif
 
 	// Register trace implementation
@@ -141,6 +150,11 @@ Application::Application(const char *inApplicationName, [[maybe_unused]] const S
 // Destructor
 Application::~Application()
 {
+#ifdef JPH_PLATFORM_WINDOWS
+	// Restore default timer resolution
+	timeEndPeriod(1);
+#endif
+
 	{
 		// Disable allocation checking
 		DisableCustomMemoryHook dcmh;
@@ -224,9 +238,10 @@ bool Application::RenderFrame()
 
 	// Calculate delta time
 	std::chrono::high_resolution_clock::time_point time = std::chrono::high_resolution_clock::now();
-	std::chrono::microseconds delta = std::chrono::duration_cast<std::chrono::microseconds>(time - mLastUpdateTime);
+	std::chrono::nanoseconds delta = std::chrono::duration_cast<std::chrono::nanoseconds>(time - mLastUpdateTime);
 	mLastUpdateTime = time;
-	float clock_delta_time = 1.0e-6f * delta.count();
+	float clock_delta_time = 1.0e-9f * delta.count();
+	mClockDeltaTime = clock_delta_time;
 	float world_delta_time = 0.0f;
 	if (mRequestedDeltaTime <= 0.0f)
 	{
@@ -328,6 +343,26 @@ bool Application::RenderFrame()
 	// Show the frame
 	mRenderer->EndFrame();
 
+	// CPU-side frame rate limiter — spin-waits to hit target frame time.
+	// Only active for fixed FPS caps (24, 30, 60, 120, etc.).
+	// VSync and Uncapped modes set mFrameRateCap = 0 and skip this.
+	if (mFrameRateCap > 0.0f)
+	{
+		using clock = std::chrono::high_resolution_clock;
+		const auto targetNs = std::chrono::nanoseconds(static_cast<long long>(1.0e9f / mFrameRateCap));
+		const auto targetEnd = mLastUpdateTime + targetNs;
+		auto remaining = targetEnd - clock::now();
+
+		// Sleep for bulk of the wait (leave ~2ms for spin precision)
+		const auto spinThreshold = std::chrono::microseconds(2000);
+		if (remaining > spinThreshold)
+			std::this_thread::sleep_for(remaining - spinThreshold);
+
+		// Spin-wait for the final stretch
+		while (clock::now() < targetEnd)
+			; // busy-wait
+	}
+
 	// Notify of next frame
 	JPH_PROFILE_NEXTFRAME();
 
@@ -398,36 +433,53 @@ void Application::DrawFPS(float inDeltaTime)
 {
 	JPH_PROFILE_FUNCTION();
 
-	// Don't divide by zero
-	if (inDeltaTime <= 0.0f)
-		return;
-
-	// Switch tho ortho mode
 	mRenderer->SetOrthoMode();
 
-	// Update stats
-	mTotalDeltaTime += inDeltaTime;
+	// ---- Accumulate frame count using wall-clock delta (always > 0 with nanosecond precision) ----
 	mNumFrames++;
-	if (mNumFrames > 10)
+	mTotalDeltaTime += max(inDeltaTime, 0.0f);
+
+	// Refresh displayed values every 0.5 seconds — cache the formatted strings
+	// so we avoid StringFormat + MeasureText overhead on every frame at high FPS.
+	if (mTotalDeltaTime >= 0.5f)
 	{
-		mFPS = mNumFrames / mTotalDeltaTime;
+		mFPS = (mTotalDeltaTime > 0.0f) ? mNumFrames / mTotalDeltaTime : 0.0f;
 		mNumFrames = 0;
 		mTotalDeltaTime = 0.0f;
+
+		// Cache FPS string
+		mCachedFpsStr = StringFormat("%.1f", (double)mFPS);
+		Float2 sz = mFont->MeasureText(mCachedFpsStr);
+		mCachedFpsW = int(sz.x * mFont->GetCharHeight());
+		mCachedFpsH = int(sz.y * mFont->GetCharHeight());
+
+		// Cache diagnostic string
+		mCachedDiagStr = StringFormat("TEAR:%s  Present:%.1fms  Fence:%.1fms",
+			mRenderer->IsTearingSupported() ? "YES" : "NO",
+			(double)mRenderer->GetPresentTimeMs(),
+			(double)mRenderer->GetFenceWaitTimeMs());
+		Float2 dsz = mFont->MeasureText(mCachedDiagStr);
+		mCachedDiagW = int(dsz.x * mFont->GetCharHeight());
+		mCachedDiagH = int(dsz.y * mFont->GetCharHeight());
 	}
 
-	// Create string
-	String fps = StringFormat("%.1f", (double)mFPS);
+	// ---- Draw cached FPS counter (center top) ----
+	if (!mCachedFpsStr.empty())
+	{
+		int x = (mWindow->GetWindowWidth() - mCachedFpsW) / 2 - 20;
+		int y = 10;
+		mUI->DrawQuad(x - 5, y - 3, mCachedFpsW + 10, mCachedFpsH + 6, UITexturedQuad(), Color(0, 0, 0, 128));
+		mUI->DrawText(x, y, mCachedFpsStr, mFont);
 
-	// Get size of text on screen
-	Float2 text_size = mFont->MeasureText(fps);
-	int text_w = int(text_size.x * mFont->GetCharHeight());
-	int text_h = int(text_size.y * mFont->GetCharHeight());
-
-	// Draw FPS counter
-	int x = (mWindow->GetWindowWidth() - text_w) / 2 - 20;
-	int y = 10;
-	mUI->DrawQuad(x - 5, y - 3, text_w + 10, text_h + 6, UITexturedQuad(), Color(0, 0, 0, 128));
-	mUI->DrawText(x, y, fps, mFont);
+		// Draw diagnostic line below FPS
+		if (!mCachedDiagStr.empty())
+		{
+			int diag_y = y + mCachedFpsH + 8;
+			int diag_x = (mWindow->GetWindowWidth() - mCachedDiagW) / 2 - 20;
+			mUI->DrawQuad(diag_x - 5, diag_y - 3, mCachedDiagW + 10, mCachedDiagH + 6, UITexturedQuad(), Color(0, 0, 0, 128));
+			mUI->DrawText(diag_x, diag_y, mCachedDiagStr, mFont);
+		}
+	}
 
 	// Draw status string
 	if (!mStatusString.empty())
@@ -441,6 +493,5 @@ void Application::DrawFPS(float inDeltaTime)
 		mUI->DrawText(mWindow->GetWindowWidth() - 5 - int(pause_size.x * mFont->GetCharHeight()), 5, paused_str, mFont);
 	}
 
-	// Restore state
 	mRenderer->SetProjectionMode();
 }

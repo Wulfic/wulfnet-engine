@@ -338,6 +338,7 @@ private:
     std::vector<float> m_fuelTemp;
     std::vector<float> m_reactionTemp;
     std::vector<float> m_uTemp, m_vTemp, m_wTemp;
+    std::vector<float> m_pressureTemp; // Double-buffer for parallel Jacobi
 
     // Emitters and obstacles
     std::vector<GasEmitter> m_emitters;

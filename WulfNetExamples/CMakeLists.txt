@@ -144,4 +144,37 @@ endif()
 
 set_target_properties(SoftRasterExample PROPERTIES FOLDER "WulfNet/Examples")
 
+# =============================================================================
+# EngineDemo - Flagship engine demonstration
+# =============================================================================
+
+set(ENGINE_DEMO_SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/EngineDemo/main.cpp
+)
+
+add_executable(EngineDemo ${ENGINE_DEMO_SRC_FILES})
+target_link_libraries(EngineDemo LINK_PUBLIC WulfNet Jolt)
+
+target_compile_features(EngineDemo PUBLIC cxx_std_17)
+
+target_include_directories(EngineDemo PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+if(MSVC)
+    target_compile_options(EngineDemo PRIVATE
+        /WX-
+        /wd4820 /wd4514 /wd4625 /wd4626 /wd5026 /wd5027
+        /wd4464 /wd4100 /wd4365 /wd4061 /wd5219 /wd4668 /wd4530
+        /wd4710 /wd4711 /wd4743
+        /GL-
+    )
+    target_link_options(EngineDemo PUBLIC
+        "/SUBSYSTEM:CONSOLE"
+        "/LTCG:OFF"
+    )
+endif()
+
+set_target_properties(EngineDemo PROPERTIES FOLDER "WulfNet/Examples")
+
 message(STATUS "WulfNet Examples configured")

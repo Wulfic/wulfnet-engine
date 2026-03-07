@@ -172,7 +172,7 @@ private:
     uint32_t m_frameCount = 0;
 
     // Transform management
-    std::vector<GPUMat4x4> m_transforms;
+    std::vector<Mat4> m_transforms;
     TransformBlender m_blender;
     bool m_isBlending = false;
 

@@ -158,6 +158,15 @@ inline void RunTest(const char* name, void (*testFunc)()) {
 // Test Suite Registration (forward declarations)
 // =============================================================================
 
+// Core unit test suites (WulfNetTests executable)
+void RegisterCoreTests();
+void RegisterPhysicsWorldTests();
+void RegisterVulkanComputeTests();
+void RegisterIFSTransformTests();
+void RegisterSoftwareRendererTests();
+void RegisterPipelineIntegrationTests();
+
+// Extended test suites (WulfNetExtendedTests executable)
 void RegisterSystemMonitorTests();
 void RegisterAdvancedPhysicsTests();
 void RegisterIntegrationTests();
@@ -175,6 +184,9 @@ void RegisterAcousticSystemTests();
 void RegisterSpatialAudioTests();
 void RegisterPerformanceBenchmarks();
 void RegisterWaterSystemV3Tests();
+void RegisterEngineLifecycleTests();
+void RegisterThreadingTests();
+void RegisterFrameAllocatorTests();
 
 // =============================================================================
 // Report Printer

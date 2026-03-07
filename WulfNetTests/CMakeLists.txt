@@ -7,6 +7,12 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 # WulfNet Unit Tests
 set(WULFNET_TEST_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/WulfNetTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CoreTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsWorldTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VulkanComputeTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFSTransformTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SoftwareRendererTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/PipelineIntegrationTests.cpp
 )
 
 add_executable(WulfNetTests ${WULFNET_TEST_SRC_FILES})
@@ -67,6 +73,9 @@ set(WULFNET_EXTENDED_TEST_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/AcousticSystemTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SpatialAudioTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceBenchmarks.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/EngineLifecycleTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ThreadingTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/FrameAllocatorTests.cpp
 )
 
 add_executable(WulfNetExtendedTests ${WULFNET_EXTENDED_TEST_SRC_FILES})
@@ -125,6 +134,8 @@ add_test(NAME WulfNetExtended_AudioEngine COMMAND WulfNetExtendedTests --suite=a
 add_test(NAME WulfNetExtended_AcousticSystem COMMAND WulfNetExtendedTests --suite=acoustic)
 add_test(NAME WulfNetExtended_SpatialAudio COMMAND WulfNetExtendedTests --suite=spatial)
 add_test(NAME WulfNetExtended_PerfBenchmarks COMMAND WulfNetExtendedTests --suite=benchmark)
+add_test(NAME WulfNetExtended_Engine COMMAND WulfNetExtendedTests --suite=engine)
+add_test(NAME WulfNetExtended_Threading COMMAND WulfNetExtendedTests --suite=threading)
 
 message(STATUS "WulfNet Tests configured")
 message(STATUS "WulfNet Extended Tests configured")

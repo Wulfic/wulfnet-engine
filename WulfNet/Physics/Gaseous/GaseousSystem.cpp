@@ -50,6 +50,7 @@ bool GaseousSystem::Initialize(const GaseousSystemConfig& config) {
     m_uTemp.resize(totalCells, 0.0f);
     m_vTemp.resize(totalCells, 0.0f);
     m_wTemp.resize(totalCells, 0.0f);
+    m_pressureTemp.resize(totalCells, 0.0f);
 
     m_stats = GaseousStats{};
     m_initialized = true;
@@ -65,6 +66,7 @@ void GaseousSystem::Shutdown() {
     m_uTemp.clear();
     m_vTemp.clear();
     m_wTemp.clear();
+    m_pressureTemp.clear();
     m_emitters.clear();
     m_obstacles.clear();
     m_stats = GaseousStats{};

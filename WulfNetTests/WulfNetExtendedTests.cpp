@@ -51,6 +51,8 @@ int main(int argc, char** argv) {
             std::cout << "  --suite=spatial      Spatial audio tests" << std::endl;
             std::cout << "  --suite=benchmark    Performance benchmarks" << std::endl;
             std::cout << "  --suite=water        Water system V3 tests" << std::endl;
+            std::cout << "  --suite=engine       Engine lifecycle tests" << std::endl;
+            std::cout << "  --suite=threading    Threading & parallelism tests" << std::endl;
             return 0;
         }
     }
@@ -200,6 +202,33 @@ int main(int argc, char** argv) {
     if (selectedSuite == "all" || selectedSuite == "benchmark") {
         std::cout << "--- Performance Benchmarks ---" << std::endl;
         RegisterPerformanceBenchmarks();
+        std::cout << std::endl;
+    }
+
+    // =========================================================================
+    // Engine Lifecycle Tests
+    // =========================================================================
+    if (selectedSuite == "all" || selectedSuite == "engine") {
+        std::cout << "--- Engine Lifecycle Tests ---" << std::endl;
+        RegisterEngineLifecycleTests();
+        std::cout << std::endl;
+    }
+
+    // =========================================================================
+    // Threading & Parallelism Tests
+    // =========================================================================
+    if (selectedSuite == "all" || selectedSuite == "threading") {
+        std::cout << "--- Threading & Parallelism Tests ---" << std::endl;
+        RegisterThreadingTests();
+        std::cout << std::endl;
+    }
+
+    // =========================================================================
+    // Frame Allocator Tests
+    // =========================================================================
+    if (selectedSuite == "all" || selectedSuite == "memory") {
+        std::cout << "--- Frame Allocator Tests ---" << std::endl;
+        RegisterFrameAllocatorTests();
         std::cout << std::endl;
     }
 

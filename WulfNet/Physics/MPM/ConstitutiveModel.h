@@ -21,6 +21,9 @@
 #include <cmath>
 #include <algorithm>
 
+// Use unified math types from Core
+#include "WulfNet/Core/Math/MathTypes.h"
+
 namespace WulfNet {
 
 // =============================================================================
@@ -35,106 +38,7 @@ enum class MPMMaterialType : uint32_t {
     Custom = 255
 };
 
-// =============================================================================
-// 3x3 Matrix (row-major) for deformation gradient & stress
-// =============================================================================
-
-struct Mat3 {
-    float m[3][3] = {};
-
-    static Mat3 Identity() {
-        Mat3 I;
-        I.m[0][0] = I.m[1][1] = I.m[2][2] = 1.0f;
-        return I;
-    }
-
-    static Mat3 Zero() { return Mat3{}; }
-
-    Mat3 operator+(const Mat3& b) const {
-        Mat3 r;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                r.m[i][j] = m[i][j] + b.m[i][j];
-        return r;
-    }
-
-    Mat3 operator-(const Mat3& b) const {
-        Mat3 r;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                r.m[i][j] = m[i][j] - b.m[i][j];
-        return r;
-    }
-
-    Mat3 operator*(float s) const {
-        Mat3 r;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                r.m[i][j] = m[i][j] * s;
-        return r;
-    }
-
-    Mat3 operator*(const Mat3& b) const {
-        Mat3 r;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j) {
-                r.m[i][j] = 0.0f;
-                for (int k = 0; k < 3; ++k)
-                    r.m[i][j] += m[i][k] * b.m[k][j];
-            }
-        return r;
-    }
-
-    Mat3 Transpose() const {
-        Mat3 r;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                r.m[i][j] = m[j][i];
-        return r;
-    }
-
-    float Determinant() const {
-        return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-             - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    }
-
-    float Trace() const {
-        return m[0][0] + m[1][1] + m[2][2];
-    }
-
-    float FrobeniusNorm() const {
-        float sum = 0.0f;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                sum += m[i][j] * m[i][j];
-        return std::sqrt(sum);
-    }
-
-    // Inverse via cofactor method (safe for singular matrices — returns identity)
-    Mat3 Inverse() const {
-        float det = Determinant();
-        if (std::abs(det) < 1e-12f) return Identity();
-
-        float invDet = 1.0f / det;
-        Mat3 r;
-        r.m[0][0] = (m[1][1]*m[2][2] - m[1][2]*m[2][1]) * invDet;
-        r.m[0][1] = (m[0][2]*m[2][1] - m[0][1]*m[2][2]) * invDet;
-        r.m[0][2] = (m[0][1]*m[1][2] - m[0][2]*m[1][1]) * invDet;
-        r.m[1][0] = (m[1][2]*m[2][0] - m[1][0]*m[2][2]) * invDet;
-        r.m[1][1] = (m[0][0]*m[2][2] - m[0][2]*m[2][0]) * invDet;
-        r.m[1][2] = (m[0][2]*m[1][0] - m[0][0]*m[1][2]) * invDet;
-        r.m[2][0] = (m[1][0]*m[2][1] - m[1][1]*m[2][0]) * invDet;
-        r.m[2][1] = (m[0][1]*m[2][0] - m[0][0]*m[2][1]) * invDet;
-        r.m[2][2] = (m[0][0]*m[1][1] - m[0][1]*m[1][0]) * invDet;
-        return r;
-    }
-
-    // Inverse-Transpose (needed for Piola-Kirchhoff stress)
-    Mat3 InverseTranspose() const {
-        return Inverse().Transpose();
-    }
-};
+// Mat3 is now defined in Core/Math/MathTypes.h
 
 // =============================================================================
 // Singular Value Decomposition (3x3 — Jacobi iteration)

@@ -96,6 +96,9 @@ void GaseousSystem::ApplyBuoyancy(float dt) {
     float alpha = m_config.buoyancyAlpha;
     float beta = m_config.buoyancyBeta;
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 0; k < m_resZ; ++k) {
         for (uint32_t j = 0; j < m_resY; ++j) {
             for (uint32_t i = 0; i < m_resX; ++i) {
@@ -116,6 +119,9 @@ void GaseousSystem::ApplyBuoyancy(float dt) {
 // =============================================================================
 
 void GaseousSystem::ApplyCombustion(float dt) {
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 0; k < m_resZ; ++k) {
         for (uint32_t j = 0; j < m_resY; ++j) {
             for (uint32_t i = 0; i < m_resX; ++i) {
@@ -150,6 +156,9 @@ void GaseousSystem::ApplyCombustion(float dt) {
 
 void GaseousSystem::ComputeVorticity() {
     // ω = ∇ × v
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 1; k < m_resZ - 1; ++k) {
         for (uint32_t j = 1; j < m_resY - 1; ++j) {
             for (uint32_t i = 1; i < m_resX - 1; ++i) {
@@ -185,6 +194,9 @@ void GaseousSystem::ApplyVorticityConfinement(float dt) {
 
     float epsilon = m_config.vorticityStrength;
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 2; k < m_resZ - 2; ++k) {
         for (uint32_t j = 2; j < m_resY - 2; ++j) {
             for (uint32_t i = 2; i < m_resX - 2; ++i) {
@@ -234,6 +246,9 @@ void GaseousSystem::ApplyVorticityConfinement(float dt) {
 void GaseousSystem::ComputeDivergence() {
     float scale = -m_invCellSize;
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 1; k < m_resZ - 1; ++k) {
         for (uint32_t j = 1; j < m_resY - 1; ++j) {
             for (uint32_t i = 1; i < m_resX - 1; ++i) {
@@ -308,6 +323,9 @@ void GaseousSystem::PressureSolve() {
 void GaseousSystem::ApplyPressureGradient() {
     float scale = m_invCellSize;
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 1; k < m_resZ - 1; ++k) {
         for (uint32_t j = 1; j < m_resY - 1; ++j) {
             for (uint32_t i = 1; i < m_resX - 1; ++i) {
@@ -339,6 +357,9 @@ void GaseousSystem::AdvectFields(float dt) {
     uint32_t total = m_resX * m_resY * m_resZ;
 
     // Copy current fields to temp buffers
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t idx = 0; idx < total; ++idx) {
         m_densityTemp[idx] = m_cells[idx].density;
         m_temperatureTemp[idx] = m_cells[idx].temperature;
@@ -349,6 +370,9 @@ void GaseousSystem::AdvectFields(float dt) {
         m_wTemp[idx] = m_cells[idx].w;
     }
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (uint32_t k = 1; k < m_resZ - 1; ++k) {
         for (uint32_t j = 1; j < m_resY - 1; ++j) {
             for (uint32_t i = 1; i < m_resX - 1; ++i) {
@@ -414,32 +438,46 @@ void GaseousSystem::ApplyDissipation(float dt) {
 // =============================================================================
 
 void GaseousSystem::UpdateStats() {
-    m_stats.activeCells = 0;
-    m_stats.solidCells = 0;
-    m_stats.totalDensity = 0.0f;
-    m_stats.maxDensity = 0.0f;
-    m_stats.maxTemperature = 0.0f;
-    m_stats.maxVelocity = 0.0f;
-    m_stats.totalFuel = 0.0f;
+    uint32_t activeCells = 0;
+    uint32_t solidCells = 0;
+    float totalDensity = 0.0f;
+    float maxDensity = 0.0f;
+    float maxTemperature = 0.0f;
+    float maxVelocity = 0.0f;
+    float totalFuel = 0.0f;
 
-    for (const auto& cell : m_cells) {
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(static) \
+        reduction(+:activeCells,solidCells,totalDensity,totalFuel) \
+        reduction(max:maxDensity,maxTemperature,maxVelocity)
+#endif
+    for (int idx = 0; idx < static_cast<int>(m_cells.size()); ++idx) {
+        const auto& cell = m_cells[idx];
         if (cell.state == GasCell::State::Solid) {
-            m_stats.solidCells++;
+            solidCells++;
             continue;
         }
 
         if (cell.density > 1e-6f || cell.temperature > 1e-4f) {
-            m_stats.activeCells++;
+            activeCells++;
         }
 
-        m_stats.totalDensity += cell.density;
-        m_stats.maxDensity = std::max(m_stats.maxDensity, cell.density);
-        m_stats.maxTemperature = std::max(m_stats.maxTemperature, cell.temperature);
-        m_stats.totalFuel += cell.fuel;
+        totalDensity += cell.density;
+        maxDensity = std::max(maxDensity, cell.density);
+        maxTemperature = std::max(maxTemperature, cell.temperature);
+        totalFuel += cell.fuel;
 
         float speed = std::sqrt(cell.u * cell.u + cell.v * cell.v + cell.w * cell.w);
-        m_stats.maxVelocity = std::max(m_stats.maxVelocity, speed);
+        maxVelocity = std::max(maxVelocity, speed);
     }
+
+    m_stats.activeCells = activeCells;
+    m_stats.solidCells = solidCells;
+    m_stats.totalDensity = totalDensity;
+    m_stats.maxDensity = maxDensity;
+    m_stats.maxTemperature = maxTemperature;
+    m_stats.maxVelocity = maxVelocity;
+    m_stats.totalFuel = totalFuel;
 }
 
 } // namespace WulfNet

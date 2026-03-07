@@ -16,6 +16,7 @@
 #pragma once
 
 #include "WulfNet/Audio/Core/AudioTypes.h"
+#include "WulfNet/API.h"
 #include <vector>
 #include <cstdint>
 #include <algorithm>
@@ -33,6 +34,16 @@ struct AudioMixerConfig {
     bool  limiterEnabled = true;    ///< Soft-clip limiter
     float limiterThreshold = 0.95f; ///< Threshold for limiter activation
     int   maxSources    = 64;       ///< Maximum simultaneous sources
+
+    /// Validate configuration and return true if valid.
+    bool Validate() const {
+        if (sampleRate <= 0 || sampleRate > 192000) return false;
+        if (bufferSize <= 0 || bufferSize > 65536) return false;
+        if (masterGain < 0.0f) return false;
+        if (limiterThreshold <= 0.0f || limiterThreshold > 1.0f) return false;
+        if (maxSources <= 0) return false;
+        return true;
+    }
 };
 
 struct AudioMixerStats {
@@ -48,7 +59,7 @@ struct AudioMixerStats {
 // Audio Mixer
 // =============================================================================
 
-class AudioMixer {
+class WULFNET_API AudioMixer {
 public:
     AudioMixer() = default;
 

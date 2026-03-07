@@ -298,6 +298,12 @@ void WulfNetVolumetricVisualTest::Initialize()
 void WulfNetVolumetricVisualTest::PrePhysicsUpdate(const PreUpdateParams &inParams)
 {
 	float dt = std::min(inParams.mDeltaTime, 1.0f / 30.0f);
+	// Guard: skip sim step if dt is invalid
+	if (!std::isfinite(dt) || dt <= 0.0f)
+	{
+		DrawVolumetricField();
+		return;
+	}
 	mTime += dt;
 	mGas.Step(dt);
 	DrawVolumetricField();
@@ -313,17 +319,26 @@ void WulfNetVolumetricVisualTest::DrawVolumetricField()
 	const uint32_t ry = mGas.GetResolutionY();
 	const uint32_t rz = mGas.GetResolutionZ();
 
-	for (uint32_t j = 0; j < ry; ++j)
+	// Safety: clamp max spheres to prevent debug renderer overflow
+	constexpr uint32_t cMaxDrawSpheres = 2000;
+	uint32_t drawnSpheres = 0;
+
+	for (uint32_t j = 0; j < ry && drawnSpheres < cMaxDrawSpheres; ++j)
 	{
-		for (uint32_t k = 0; k < rz; ++k)
+		for (uint32_t k = 0; k < rz && drawnSpheres < cMaxDrawSpheres; ++k)
 		{
-			for (uint32_t i = 0; i < rx; ++i)
+			for (uint32_t i = 0; i < rx && drawnSpheres < cMaxDrawSpheres; ++i)
 			{
 				const auto &cell = mGas.GetCell(i, j, k);
 				if (cell.density < 0.02f) continue;
 
+				// Guard against NaN/Inf from numerical instability
+				if (!std::isfinite(cell.density)) continue;
+
 				float wx, wy, wz;
 				mGas.GridToWorld(i + 0.5f, j + 0.5f, k + 0.5f, wx, wy, wz);
+				if (!std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz))
+					continue;
 
 				float d = Clamp01(cell.density / 3.0f);
 
@@ -335,13 +350,15 @@ void WulfNetVolumetricVisualTest::DrawVolumetricField()
 				float sphereR = cellSize * 0.6f * (0.5f + 0.5f * d);
 				mDebugRenderer->DrawSphere(RVec3(wx, wy, wz), sphereR, c,
 					DebugRenderer::ECastShadow::Off, DebugRenderer::EDrawMode::Solid);
+				++drawnSpheres;
 			}
 		}
 	}
 
 	const auto &stats = mGas.GetStats();
 	char buf[128];
-	snprintf(buf, sizeof(buf), "Cloud: %u cells, density=%.1f", stats.activeCells, stats.totalDensity);
+	snprintf(buf, sizeof(buf), "Cloud: %u cells, density=%.1f (drawn: %u)",
+	         stats.activeCells, stats.totalDensity, drawnSpheres);
 	mDebugRenderer->DrawText3D(RVec3(0, 7, 0), buf, Color::sYellow, 0.25f);
 	mDebugRenderer->DrawText3D(RVec3(0, 7.5, 0), "Volumetric Cloud / Fog", Color::sWhite, 0.4f);
 #endif

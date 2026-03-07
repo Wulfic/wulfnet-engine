@@ -169,6 +169,26 @@ Logger& Logger::Get() {
     return instance;
 }
 
+// =============================================================================
+// Static Convenience API
+// =============================================================================
+
+void Logger::Initialize() {
+    // Just touch the singleton to ensure it's constructed.
+    // The constructor already adds a default console sink.
+    (void)Get();
+}
+
+void Logger::Initialize(LogLevel minLevel, bool logToFile,
+                         const std::string& logFilePath) {
+    auto& logger = Get();
+    logger.m_minLevel = minLevel;
+
+    if (logToFile) {
+        logger.AddSink(std::make_shared<FileLogSink>(logFilePath));
+    }
+}
+
 Logger::Logger() {
     // Add default console sink
     AddSink(std::make_shared<ConsoleLogSink>(true));

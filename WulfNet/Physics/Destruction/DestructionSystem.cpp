@@ -6,6 +6,10 @@
 #include <cstring>
 #include <chrono>
 
+#ifdef WULFNET_HAS_OPENMP
+#include <omp.h>
+#endif
+
 namespace WulfNet {
 
 // =============================================================================
@@ -141,6 +145,65 @@ void DestructionSystem::ComputeVoronoiVolumes(FracturePattern& pattern) {
     std::vector<float> cellMaxY(cellCount, -1e30f);
     std::vector<float> cellMaxZ(cellCount, -1e30f);
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel
+    {
+        // Per-thread local accumulators for scatter pattern
+        std::vector<float> localVol(cellCount, 0.0f);
+        std::vector<float> localMinX(cellCount, 1e30f);
+        std::vector<float> localMinY(cellCount, 1e30f);
+        std::vector<float> localMinZ(cellCount, 1e30f);
+        std::vector<float> localMaxX(cellCount, -1e30f);
+        std::vector<float> localMaxY(cellCount, -1e30f);
+        std::vector<float> localMaxZ(cellCount, -1e30f);
+
+        #pragma omp for nowait
+        for (int sk = 0; sk < sampleRes; ++sk) {
+            for (int sj = 0; sj < sampleRes; ++sj) {
+                for (int si = 0; si < sampleRes; ++si) {
+                    float px = pattern.boundMinX + (static_cast<float>(si) + 0.5f) * stepX;
+                    float py = pattern.boundMinY + (static_cast<float>(sj) + 0.5f) * stepY;
+                    float pz = pattern.boundMinZ + (static_cast<float>(sk) + 0.5f) * stepZ;
+
+                    float bestDist = 1e30f;
+                    uint32_t bestIdx = 0;
+                    for (uint32_t c = 0; c < cellCount; ++c) {
+                        float dx = px - pattern.cells[c].centerX;
+                        float dy = py - pattern.cells[c].centerY;
+                        float dz = pz - pattern.cells[c].centerZ;
+                        float dist = dx * dx + dy * dy + dz * dz;
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestIdx = c;
+                        }
+                    }
+
+                    localVol[bestIdx] += sampleVol;
+                    localMinX[bestIdx] = std::min(localMinX[bestIdx], px);
+                    localMinY[bestIdx] = std::min(localMinY[bestIdx], py);
+                    localMinZ[bestIdx] = std::min(localMinZ[bestIdx], pz);
+                    localMaxX[bestIdx] = std::max(localMaxX[bestIdx], px);
+                    localMaxY[bestIdx] = std::max(localMaxY[bestIdx], py);
+                    localMaxZ[bestIdx] = std::max(localMaxZ[bestIdx], pz);
+                }
+            }
+        }
+
+        // Merge per-thread results
+        #pragma omp critical
+        {
+            for (uint32_t c = 0; c < cellCount; ++c) {
+                volumes[c]  += localVol[c];
+                cellMinX[c] = std::min(cellMinX[c], localMinX[c]);
+                cellMinY[c] = std::min(cellMinY[c], localMinY[c]);
+                cellMinZ[c] = std::min(cellMinZ[c], localMinZ[c]);
+                cellMaxX[c] = std::max(cellMaxX[c], localMaxX[c]);
+                cellMaxY[c] = std::max(cellMaxY[c], localMaxY[c]);
+                cellMaxZ[c] = std::max(cellMaxZ[c], localMaxZ[c]);
+            }
+        }
+    }
+#else
     for (int sk = 0; sk < sampleRes; ++sk) {
         for (int sj = 0; sj < sampleRes; ++sj) {
             for (int si = 0; si < sampleRes; ++si) {
@@ -148,10 +211,8 @@ void DestructionSystem::ComputeVoronoiVolumes(FracturePattern& pattern) {
                 float py = pattern.boundMinY + (static_cast<float>(sj) + 0.5f) * stepY;
                 float pz = pattern.boundMinZ + (static_cast<float>(sk) + 0.5f) * stepZ;
 
-                // Find nearest Voronoi site
                 float bestDist = 1e30f;
                 uint32_t bestIdx = 0;
-
                 for (uint32_t c = 0; c < cellCount; ++c) {
                     float dx = px - pattern.cells[c].centerX;
                     float dy = py - pattern.cells[c].centerY;
@@ -164,8 +225,6 @@ void DestructionSystem::ComputeVoronoiVolumes(FracturePattern& pattern) {
                 }
 
                 volumes[bestIdx] += sampleVol;
-
-                // Update bounding box
                 cellMinX[bestIdx] = std::min(cellMinX[bestIdx], px);
                 cellMinY[bestIdx] = std::min(cellMinY[bestIdx], py);
                 cellMinZ[bestIdx] = std::min(cellMinZ[bestIdx], pz);
@@ -175,6 +234,7 @@ void DestructionSystem::ComputeVoronoiVolumes(FracturePattern& pattern) {
             }
         }
     }
+#endif
 
     pattern.totalVolume = 0.0f;
     for (uint32_t c = 0; c < cellCount; ++c) {

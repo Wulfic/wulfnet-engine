@@ -25,6 +25,7 @@ struct VkPipelineCache_T;
 struct VkCommandBuffer_T;
 struct VkFence_T;
 struct VkDescriptorSet_T;
+struct VkSemaphore_T;
 
 typedef VkInstance_T* VkInstance;
 typedef VkPhysicalDevice_T* VkPhysicalDevice;
@@ -36,8 +37,11 @@ typedef VkPipelineCache_T* VkPipelineCache;
 typedef VkCommandBuffer_T* VkCommandBuffer;
 typedef VkFence_T* VkFence;
 typedef VkDescriptorSet_T* VkDescriptorSet;
+typedef VkSemaphore_T* VkSemaphore;
 
+#ifndef VK_NULL_HANDLE
 #define VK_NULL_HANDLE nullptr
+#endif
 
 namespace WulfNet {
 
@@ -166,6 +170,51 @@ public:
     /// Submit a one-time command buffer and wait for completion
     bool SubmitAndWait(std::function<void(void* cmdBuffer)> recordFunc);
 
+    // ==========================================================================
+    // Frame-Pipelined Async Compute (10.1)
+    // ==========================================================================
+
+    /// Number of frames that can be in-flight simultaneously
+    static constexpr int FRAMES_IN_FLIGHT = 2;
+
+    /// Per-frame GPU resources for double-buffered async dispatch
+    struct FrameResources {
+        VkCommandBuffer cmdBuffer = nullptr;
+        VkFence fence = nullptr;
+        VkSemaphore semaphore = nullptr;
+        bool inFlight = false;
+        bool recording = false;
+    };
+
+    /// Begin recording commands for the given frame index (0 or 1).
+    /// Waits for the fence if this frame's previous submission is still in-flight.
+    /// @return true if recording started successfully
+    bool BeginFrame(int frameIndex);
+
+    /// Submit the current frame's command buffer without blocking.
+    /// @return true if submission succeeded
+    bool SubmitFrame(int frameIndex);
+
+    /// Block until the given frame's GPU work completes.
+    /// @return true if wait succeeded
+    bool WaitForFrame(int frameIndex);
+
+    /// Non-blocking check: has the given frame's GPU work completed?
+    bool PollFrame(int frameIndex) const;
+
+    /// Get the command buffer for the current frame (valid between Begin/Submit).
+    VkCommandBuffer GetFrameCommandBuffer(int frameIndex) const;
+
+    // ==========================================================================
+    // Command Buffer Pool (10.1.4)
+    // ==========================================================================
+
+    /// Acquire a one-shot command buffer from the pool (auto-reset on return)
+    VkCommandBuffer AcquireCommandBuffer();
+
+    /// Return a command buffer to the pool after submission fence signals
+    void ReturnCommandBuffer(VkCommandBuffer cmdBuffer);
+
 private:
     bool CreateInstance(const VulkanContextSettings& settings);
     bool SelectPhysicalDevice(const VulkanContextSettings& settings);
@@ -192,6 +241,17 @@ private:
     void* m_debugMessenger = nullptr;
 
     GPUDeviceInfo m_deviceInfo;
+
+    // Frame-pipelined resources (10.1)
+    FrameResources m_frames[FRAMES_IN_FLIGHT] = {};
+    bool m_framesInitialized = false;
+    bool InitializeFrameResources();
+    void DestroyFrameResources();
+
+    // Command buffer pool (10.1.4)
+    std::vector<VkCommandBuffer> m_cmdBufferPool;
+    static constexpr int INITIAL_CMD_POOL_SIZE = 8;
+    bool GrowCommandBufferPool(int count);
 };
 
 // =============================================================================

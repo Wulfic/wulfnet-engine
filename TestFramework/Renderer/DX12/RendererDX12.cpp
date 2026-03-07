@@ -36,6 +36,8 @@ RendererDX12::~RendererDX12()
 	mIsExiting = true;
 
 	CloseHandle(mFenceEvent);
+
+
 }
 
 void RendererDX12::WaitForGpu()
@@ -146,7 +148,7 @@ void RendererDX12::Initialize(ApplicationWindow *inWindow)
 
 	// Create heaps
 	ID3D12Device *device = GetDevice();
-	mRTVHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 2);
+	mRTVHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, cFrameCount);
 	mDSVHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 4);
 	mSRVHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 128);
 
@@ -161,23 +163,45 @@ void RendererDX12::Initialize(ApplicationWindow *inWindow)
 	for (uint n = 0; n < cFrameCount; n++)
 		FatalErrorIfFailed(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocators[n])));
 
-	// Describe and create the swap chain
-	DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+	// ALLOW_TEARING lets SyncInterval=0 bypass DWM VSync entirely.
+	// We intentionally do NOT use FRAME_LATENCY_WAITABLE_OBJECT because
+	// that mechanism paces frames to the display refresh rate internally,
+	// hard-locking output to 60 FPS even when we skip the waitable wait.
+	UINT swapChainFlags = 0;
+	if (mTearingSupported)
+		swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+
+	Trace("DX12: Tearing support = %s, %u buffers",
+		  mTearingSupported ? "YES" : "NO", cFrameCount);
+
+	// Create swap chain using modern DXGI 1.2+ API (CreateSwapChainForHwnd)
+	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
 	swap_chain_desc.BufferCount = cFrameCount;
-	swap_chain_desc.BufferDesc.Width = mWindow->GetWindowWidth();
-	swap_chain_desc.BufferDesc.Height = mWindow->GetWindowHeight();
-	swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swap_chain_desc.Width = mWindow->GetWindowWidth();
+	swap_chain_desc.Height = mWindow->GetWindowHeight();
+	swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	swap_chain_desc.OutputWindow = static_cast<ApplicationWindowWin *>(mWindow)->GetWindowHandle();
 	swap_chain_desc.SampleDesc.Count = 1;
-	swap_chain_desc.Windowed = TRUE;
-	if (mTearingSupported)
-		swap_chain_desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+	swap_chain_desc.Flags = swapChainFlags;
 
-	ComPtr<IDXGISwapChain> swap_chain;
-	FatalErrorIfFailed(factory->CreateSwapChain(mCommandQueue.Get(), &swap_chain_desc, &swap_chain));
-	FatalErrorIfFailed(swap_chain.As(&mSwapChain));
+	ComPtr<IDXGIFactory2> factory2;
+	FatalErrorIfFailed(factory->QueryInterface(IID_PPV_ARGS(&factory2)));
+
+	HWND hwnd = static_cast<ApplicationWindowWin *>(mWindow)->GetWindowHandle();
+	ComPtr<IDXGISwapChain1> swap_chain1;
+	FatalErrorIfFailed(factory2->CreateSwapChainForHwnd(mCommandQueue.Get(), hwnd, &swap_chain_desc, nullptr, nullptr, &swap_chain1));
+	FatalErrorIfFailed(swap_chain1.As(&mSwapChain));
+
+	// Set device-level max frame latency high so DXGI allows the CPU to
+	// queue many frames ahead.  The GPU fence in EndFrame() prevents
+	// overwriting buffers that are still in use.
+	{
+		ComPtr<IDXGIDevice1> dxgiDevice;
+		if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&dxgiDevice))))
+			dxgiDevice->SetMaximumFrameLatency(DXGI_MAX_SWAP_CHAIN_BUFFERS);
+	}
+
 	mFrameIndex = mSwapChain->GetCurrentBackBufferIndex();
 
 	CreateRenderTargets();
@@ -428,33 +452,61 @@ void RendererDX12::EndFrame()
 	ID3D12CommandList* command_lists[] = { mCommandList.Get() };
 	mCommandQueue->ExecuteCommandLists((UINT)std::size(command_lists), command_lists);
 
-	// Present the frame — SyncInterval=0 + ALLOW_TEARING truly disables VSync
-	// Note: DXGI_PRESENT_ALLOW_TEARING is only valid when NOT in exclusive fullscreen
+	// Signal the fence BEFORE Present so the fence tracks command-list
+	// (rendering) completion, not present completion.  Present() with
+	// FLIP_DISCARD puts a flip marker on the hardware queue that can be
+	// gated by DWM composition; placing the Signal after it would make
+	// our per-buffer fence wait include that DWM latency (~16 ms at 60 Hz).
+	UINT64 current_fence_value = mFenceValues[mFrameIndex];
+	FatalErrorIfFailed(mCommandQueue->Signal(mFence.Get(), current_fence_value));
+
+	// Present the frame.
+	// VSync mode: SyncInterval=1, no flags → GPU waits for vertical blank.
+	// Non-VSync:  SyncInterval=0 + ALLOW_TEARING → immediate present.
+	UINT syncInterval = mVSyncEnabled ? 1 : 0;
 	UINT presentFlags = 0;
-	if (mTearingSupported)
+	if (!mVSyncEnabled && mTearingSupported)
 	{
 		BOOL isFullscreen = FALSE;
 		mSwapChain->GetFullscreenState(&isFullscreen, nullptr);
 		if (!isFullscreen)
 			presentFlags = DXGI_PRESENT_ALLOW_TEARING;
 	}
-	HRESULT hr = mSwapChain->Present(0, presentFlags);
+
+	// Diagnostic: time the Present() call
+	LARGE_INTEGER t0, t1;
+	QueryPerformanceCounter(&t0);
+	HRESULT hr = mSwapChain->Present(syncInterval, presentFlags);
+	QueryPerformanceCounter(&t1);
 	if (FAILED(hr) && hr != DXGI_ERROR_WAS_STILL_DRAWING)
 		FatalErrorIfFailed(hr);
 
-	// Schedule a Signal command in the queue
-	UINT64 current_fence_value = mFenceValues[mFrameIndex];
-	FatalErrorIfFailed(mCommandQueue->Signal(mFence.Get(), current_fence_value));
+	// Calculate Present() duration
+	{
+		LARGE_INTEGER freq;
+		QueryPerformanceFrequency(&freq);
+		mPresentTimeMs = static_cast<float>(1000.0 * (t1.QuadPart - t0.QuadPart) / freq.QuadPart);
+	}
 
 	// Update the frame index
 	mFrameIndex = mSwapChain->GetCurrentBackBufferIndex();
 
 	// If the next frame is not ready to be rendered yet, wait until it is ready
+	LARGE_INTEGER t2, t3;
+	QueryPerformanceCounter(&t2);
 	UINT64 completed_value = mFence->GetCompletedValue();
 	if (completed_value < mFenceValues[mFrameIndex])
 	{
 		FatalErrorIfFailed(mFence->SetEventOnCompletion(mFenceValues[mFrameIndex], mFenceEvent));
 		WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
+	}
+	QueryPerformanceCounter(&t3);
+
+	// Calculate fence wait duration
+	{
+		LARGE_INTEGER freq;
+		QueryPerformanceFrequency(&freq);
+		mFenceWaitTimeMs = static_cast<float>(1000.0 * (t3.QuadPart - t2.QuadPart) / freq.QuadPart);
 	}
 
 	// Release all used resources

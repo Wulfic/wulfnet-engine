@@ -91,6 +91,18 @@ bool SystemMonitor::Initialize() {
         m_lastCPUUserTime = (static_cast<uint64_t>(userTime.dwHighDateTime) << 32) | userTime.dwLowDateTime;
     }
 
+    // Initialize process CPU time tracking
+    {
+        FILETIME createTime, exitTime, procKernel, procUser;
+        if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &procKernel, &procUser)) {
+            m_lastProcessKernelTime = (static_cast<uint64_t>(procKernel.dwHighDateTime) << 32) | procKernel.dwLowDateTime;
+            m_lastProcessUserTime = (static_cast<uint64_t>(procUser.dwHighDateTime) << 32) | procUser.dwLowDateTime;
+        }
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        m_lastProcessWallTime = (static_cast<uint64_t>(now.dwHighDateTime) << 32) | now.dwLowDateTime;
+    }
+
     // Try to load NVML for GPU monitoring
     m_nvmlLib = LoadLibraryA("nvml.dll");
     if (m_nvmlLib) {
@@ -141,6 +153,15 @@ void SystemMonitor::Shutdown() {
         FreeLibrary((HMODULE)m_nvmlLib);
         m_nvmlLib = nullptr;
     }
+
+    // Reset all NVML function pointers to prevent calling into unloaded DLL
+    s_nvmlInit = nullptr;
+    s_nvmlShutdown = nullptr;
+    s_nvmlDeviceGetHandleByIndex = nullptr;
+    s_nvmlDeviceGetUtilizationRates = nullptr;
+    s_nvmlDeviceGetMemoryInfo = nullptr;
+    s_nvmlDeviceGetName = nullptr;
+    m_nvmlDevice = nullptr;
 #endif
 
     m_gpuMonitoringAvailable = false;
@@ -155,6 +176,7 @@ void SystemMonitor::Update() {
     if (!m_initialized) return;
 
     UpdateCPUUsage();
+    UpdateProcessCPUUsage();
     UpdateRAMUsage();
     UpdateGPUUsage();
     UpdateProcessMemory();
@@ -185,6 +207,33 @@ void SystemMonitor::UpdateCPUUsage() {
 #endif
 }
 
+void SystemMonitor::UpdateProcessCPUUsage() {
+#ifdef _WIN32
+    FILETIME createTime, exitTime, procKernel, procUser;
+    if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &procKernel, &procUser)) {
+        uint64_t kernel = (static_cast<uint64_t>(procKernel.dwHighDateTime) << 32) | procKernel.dwLowDateTime;
+        uint64_t user = (static_cast<uint64_t>(procUser.dwHighDateTime) << 32) | procUser.dwLowDateTime;
+
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        uint64_t wall = (static_cast<uint64_t>(now.dwHighDateTime) << 32) | now.dwLowDateTime;
+
+        uint64_t cpuDelta = (kernel - m_lastProcessKernelTime) + (user - m_lastProcessUserTime);
+        uint64_t wallDelta = wall - m_lastProcessWallTime;
+
+        if (wallDelta > 0) {
+            // Process CPU % — ratio of process CPU time to wall time
+            // This can exceed 100% on multi-core (e.g., 400% means 4 cores saturated)
+            m_stats.processCpuPercent = static_cast<float>(cpuDelta) / static_cast<float>(wallDelta) * 100.0f;
+        }
+
+        m_lastProcessKernelTime = kernel;
+        m_lastProcessUserTime = user;
+        m_lastProcessWallTime = wall;
+    }
+#endif
+}
+
 void SystemMonitor::UpdateRAMUsage() {
 #ifdef _WIN32
     MEMORYSTATUSEX memStatus;
@@ -206,24 +255,36 @@ void SystemMonitor::UpdateGPUUsage() {
         return;
     }
 
-    // GPU utilization
+    // GPU utilization — guard against stale NVML device handles after driver resets
     if (s_nvmlDeviceGetUtilizationRates) {
         NvmlUtilization util = {0, 0};
-        if (s_nvmlDeviceGetUtilizationRates(m_nvmlDevice, &util) == 0) {
+        int result = s_nvmlDeviceGetUtilizationRates(m_nvmlDevice, &util);
+        if (result == 0) {
             m_stats.gpuUsagePercent = static_cast<float>(util.gpu);
             m_stats.gpuUsageAvailable = true;
+        } else {
+            // NVML call failed (driver reset, device lost, etc.) — disable GPU monitoring
+            // to prevent repeated crashes on subsequent polls
+            m_gpuMonitoringAvailable = false;
+            m_stats.gpuUsageAvailable = false;
+            m_stats.vramUsageAvailable = false;
+            return;
         }
     }
 
     // VRAM usage
     if (s_nvmlDeviceGetMemoryInfo) {
         NvmlMemory mem = {0, 0, 0};
-        if (s_nvmlDeviceGetMemoryInfo(m_nvmlDevice, &mem) == 0) {
+        int result = s_nvmlDeviceGetMemoryInfo(m_nvmlDevice, &mem);
+        if (result == 0) {
             m_stats.vramTotalBytes = mem.total;
             m_stats.vramUsedBytes = mem.used;
-            m_stats.vramUsagePercent = static_cast<float>(mem.used) /
-                                        static_cast<float>(mem.total) * 100.0f;
+            if (mem.total > 0)
+                m_stats.vramUsagePercent = static_cast<float>(mem.used) /
+                                            static_cast<float>(mem.total) * 100.0f;
             m_stats.vramUsageAvailable = true;
+        } else {
+            m_stats.vramUsageAvailable = false;
         }
     }
 #endif

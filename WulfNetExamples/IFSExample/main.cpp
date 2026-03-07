@@ -121,7 +121,7 @@ int main() {
     // Cleanup
     ifs.Shutdown();
     WulfNet::ShutdownVulkanContext();
-    WulfNet::Logger::Shutdown();
+    WulfNet::Logger::Get().Flush();
 
     std::cout << "\nIFS Example completed successfully!" << std::endl;
     return 0;

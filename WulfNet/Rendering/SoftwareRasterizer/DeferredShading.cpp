@@ -6,6 +6,10 @@
 #include <cmath>
 #include <algorithm>
 
+#ifdef WULFNET_HAS_OPENMP
+#include <omp.h>
+#endif
+
 namespace WulfNet {
 
 static float Clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
@@ -20,6 +24,9 @@ void DeferredShading::Apply(GBuffer& gbuffer, const DeferredShadingConfig& confi
     int height = gbuffer.GetHeight();
     float fovScale = 1.0f / std::tan(camera.fov * 0.5f * 3.14159265f / 180.0f);
 
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+#endif
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             float depth = gbuffer.GetDepth(x, y);

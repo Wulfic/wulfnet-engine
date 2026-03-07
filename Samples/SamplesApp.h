@@ -245,6 +245,8 @@ private:
 	float					mDragFraction;												// Fraction along cDragRayLength (see cpp) where the hit occurred. This will be combined with the crosshair position to get a 3d anchor point.
 
 	// Timing
+	int						mFrameRateModeIndex = 0;									// Current FPS cap mode (0=VSync, 1..9=fixed, 10=Uncapped)
+	float					mPhysicsAccumulator = 0.0f;									// Accumulated wall-clock time for physics sub-stepping (seconds)
 	uint					mStepNumber = 0;											// Which step number we're accumulating
 	chrono::microseconds	mTotalTime { 0 };											// How many nano seconds we spent simulating
 };

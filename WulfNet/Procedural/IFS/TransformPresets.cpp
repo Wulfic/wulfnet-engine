@@ -126,8 +126,8 @@ std::vector<TransformInstructions> GenerateProcedural(const ProceduralConfig& co
     return instructions;
 }
 
-std::vector<GPUMat4x4> BuildMatrices(const std::vector<TransformInstructions>& instructions) {
-    std::vector<GPUMat4x4> matrices;
+std::vector<Mat4> BuildMatrices(const std::vector<TransformInstructions>& instructions) {
+    std::vector<Mat4> matrices;
     matrices.reserve(instructions.size());
     for (const auto& inst : instructions) {
         matrices.push_back(AffineTransform::FromInstructions(inst));

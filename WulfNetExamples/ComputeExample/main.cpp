@@ -16,9 +16,9 @@ int main() {
     std::cout << "=== WulfNet GPU Compute Example ===" << std::endl;
     std::cout << std::endl;
 
-    // Add console logging
-    Logger::Get().AddSink(std::make_shared<ConsoleLogSink>(true));
-    Logger::Get().SetMinLevel(LogLevel::Debug);
+    // Initialize logging
+    Logger::Initialize();
+    Logger::SetMinLevel(LogLevel::Debug);
 
     // Check if GPU compute is available
     std::cout << "Checking GPU compute availability..." << std::endl;

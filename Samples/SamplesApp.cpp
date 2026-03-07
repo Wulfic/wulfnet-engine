@@ -59,6 +59,9 @@
 #include <Tests/WulfNet/WaterBoxTest.h>
 #include <Tests/WulfNet/WulfNetAdvancedTests.h>
 
+#include <WulfNet/Core/System/PerfLogger.h>
+#include <WulfNet/Core/System/SystemMonitor.h>
+
 JPH_SUPPRESS_WARNINGS_STD_BEGIN
 #include <fstream>
 JPH_SUPPRESS_WARNINGS_STD_END
@@ -501,11 +504,23 @@ static constexpr uint cMaxContactConstraints = 20480;
 SamplesApp::SamplesApp(const String &inCommandLine) :
 	Application("Jolt Physics Samples", inCommandLine)
 {
-	// Unlock rendering — use variable timestep so every frame processes physics.
-	// Physics still uses fixed dt internally (1/mUpdateFrequency) but now runs
-	// every rendered frame instead of being gated by the accumulator.
-	// This shows true per-frame performance in the FPS counter.
+	// Physics always runs at 60Hz via an internal accumulator in UpdateFrame.
+	// The render loop runs freely — paced by VSync, CPU cap, or fully uncapped.
+	// UnlockFrameRate() makes Application pass real wall-clock delta each frame.
+	mUpdateFrequency = 60.0f;
 	UnlockFrameRate();
+
+	// Default to VSync mode
+	// (VSync is applied later in UpdateFrame after renderer is created)
+
+	// Initialize performance logger — logs to CSV and provides HUD overlay data
+	// Pass "--perflog" on command line to enable CSV file output
+	{
+		std::string perfCsvPath;
+		if (inCommandLine.find("--perflog") != String::npos)
+			perfCsvPath = "perf_log.csv";
+		WulfNet::PerfLogger::Get().Initialize(perfCsvPath, 500.0f);
+	}
 
 	// Allocate temp memory
 #ifdef JPH_DISABLE_TEMP_ALLOCATOR
@@ -771,6 +786,9 @@ SamplesApp::SamplesApp(const String &inCommandLine) :
 
 SamplesApp::~SamplesApp()
 {
+	// Shut down performance logger
+	WulfNet::PerfLogger::Get().Shutdown();
+
 	// Clean up
 	delete mTest;
 	delete mContactListener;
@@ -2168,6 +2186,10 @@ void SamplesApp::UpdateDebug(float inDeltaTime)
 
 bool SamplesApp::UpdateFrame(float inDeltaTime)
 {
+	// Record true wall-clock frame time (includes rendering + present from previous frame).
+	// mClockDeltaTime is measured in Application::RenderFrame and covers the entire frame loop.
+	WulfNet::PerfLogger::Get().RecordFrame(mClockDeltaTime * 1000.0f);
+
 	// Reinitialize the job system if the concurrency setting changed
 	if (mMaxConcurrentJobs != mJobSystem->GetMaxConcurrency())
 		static_cast<JobSystemThreadPool *>(mJobSystem)->SetNumThreads(mMaxConcurrentJobs - 1);
@@ -2189,6 +2211,38 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 		mStatusString = String(description) + "\n" + mTest->GetStatusString();
 	else
 		mStatusString = mTest->GetStatusString();
+
+	// Prepend performance HUD overlay (CPU/GPU/Memory stats) at top-left.
+	// Cache the formatted string and only refresh every ~0.5 seconds to avoid
+	// 80K+ string allocations per second at uncapped frame rates.
+	{
+		static std::string cachedPerfText;
+		static float perfTextTimer = 0.0f;
+		perfTextTimer += mClockDeltaTime * 1000.0f;  // accumulate in ms
+		if (perfTextTimer >= 500.0f || cachedPerfText.empty())
+		{
+			perfTextTimer = 0.0f;
+			cachedPerfText = WulfNet::PerfLogger::Get().FormatOverlayText();
+
+			// Build FPS cap mode label
+			const char* modeNames[] = {
+				"VSync", "24", "30", "50", "60", "120", "144", "240", "360", "480", "Uncapped"
+			};
+			const char* modeName = (mFrameRateModeIndex >= 0 && mFrameRateModeIndex < 11)
+				? modeNames[mFrameRateModeIndex] : "?";
+
+			char info[128];
+			snprintf(info, sizeof(info), "FPS Cap: %s  [U to cycle]  |  Physics: %.0f Hz",
+				modeName, (double)mUpdateFrequency);
+			cachedPerfText += "\n";
+			cachedPerfText += info;
+		}
+
+		if (!mStatusString.empty())
+			mStatusString = String(cachedPerfText.c_str()) + "\n" + mStatusString;
+		else
+			mStatusString = String(cachedPerfText.c_str());
+	}
 
 	// Select the next test if automatic testing times out
 	if (!CheckNextTest())
@@ -2219,6 +2273,27 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 				mDrawGetTriangles = !mDrawGetTriangles;
 			else
 				mBodyDrawSettings.mDrawShape = !mBodyDrawSettings.mDrawShape;
+			break;
+
+		case EKey::U:
+			{
+				// Cycle FPS cap: VSync → 24 → 30 → 50 → 60 → 120 → 144 → 240 → 360 → 480 → Uncapped → VSync
+				mFrameRateModeIndex = (mFrameRateModeIndex + 1) % 11;
+				switch (mFrameRateModeIndex)
+				{
+				case 0:  mRenderer->SetVSync(true);  mFrameRateCap = 0.0f;   break; // VSync
+				case 1:  mRenderer->SetVSync(false); mFrameRateCap = 24.0f;  break;
+				case 2:  mRenderer->SetVSync(false); mFrameRateCap = 30.0f;  break;
+				case 3:  mRenderer->SetVSync(false); mFrameRateCap = 50.0f;  break;
+				case 4:  mRenderer->SetVSync(false); mFrameRateCap = 60.0f;  break;
+				case 5:  mRenderer->SetVSync(false); mFrameRateCap = 120.0f; break;
+				case 6:  mRenderer->SetVSync(false); mFrameRateCap = 144.0f; break;
+				case 7:  mRenderer->SetVSync(false); mFrameRateCap = 240.0f; break;
+				case 8:  mRenderer->SetVSync(false); mFrameRateCap = 360.0f; break;
+				case 9:  mRenderer->SetVSync(false); mFrameRateCap = 480.0f; break;
+				case 10: mRenderer->SetVSync(false); mFrameRateCap = 0.0f;   break; // Uncapped
+				}
+			}
 			break;
 
 		case EKey::F:
@@ -2400,7 +2475,30 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 		// Normal update
 		JPH_ASSERT(mCurrentPlaybackFrame == -1);
 
+		// Physics sub-stepping: accumulate real wall-clock time and step physics
+		// at a fixed mUpdateFrequency (default 60Hz) regardless of render rate.
+		// At low FPS (e.g. 24fps) this runs multiple steps to keep physics real-time.
+		// At high FPS (e.g. uncapped) this skips most frames for physics.
+		const float physicsDt = 1.0f / mUpdateFrequency;
+		const int maxSubSteps = 8;  // Cap sub-steps per frame to prevent spiral of death
+
+		// Only accumulate when the Application layer says we're not paused
+		// (inDeltaTime == 0 when paused, due to Application's pause logic)
 		if (inDeltaTime > 0.0f)
+			mPhysicsAccumulator += inDeltaTime;
+
+		int numSteps = 0;
+		while (mPhysicsAccumulator >= physicsDt && numSteps < maxSubSteps)
+		{
+			mPhysicsAccumulator -= physicsDt;
+			numSteps++;
+		}
+
+		// Clamp residual to prevent runaway accumulation
+		if (mPhysicsAccumulator > physicsDt)
+			mPhysicsAccumulator = physicsDt;
+
+		if (numSteps > 0)
 		{
 			// Debugging functionality like shooting a ball and dragging objects
 			UpdateDebug(inDeltaTime);
@@ -2409,7 +2507,7 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 				// Process input, this is done once and before we save the state so that we can save the input state
 				JPH_PROFILE("ProcessInput");
 				Test::ProcessInputParams handle_input;
-				handle_input.mDeltaTime = 1.0f / mUpdateFrequency;
+				handle_input.mDeltaTime = physicsDt;
 				handle_input.mKeyboard = mKeyboard;
 				handle_input.mCameraState = GetCamera();
 				mTest->ProcessInput(handle_input);
@@ -2430,8 +2528,9 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 			// (the constraints are solved on the current state and then the world is stepped)
 			DrawPhysics();
 
-			// Update the physics world
-			StepPhysics(mJobSystem);
+			// Run all accumulated physics sub-steps
+			for (int i = 0; i < numSteps; ++i)
+				StepPhysics(mJobSystem);
 
 		#ifdef JPH_DEBUG_RENDERER
 			// Draw any contacts that were collected through the contact listener
@@ -2454,7 +2553,8 @@ bool SamplesApp::UpdateFrame(float inDeltaTime)
 				mTest->RestoreInputState(frame.mInputState);
 
 				// Step again
-				StepPhysics(mJobSystemValidating);
+				for (int i = 0; i < numSteps; ++i)
+					StepPhysics(mJobSystemValidating);
 
 				// Validate that the result is the same
 				ValidateState(post_step_state);

@@ -19,7 +19,8 @@ using namespace JPH::literals;
 
 int main(int argc, char** argv) {
     // Configure logging
-    Logger::Get().SetMinLevel(LogLevel::Debug);
+    Logger::Initialize();
+    Logger::SetMinLevel(LogLevel::Debug);
 
     WULFNET_INFO("HelloWulfNet", "=== WulfNet Engine Example ===");
     WULFNET_INFO("HelloWulfNet", "Version: " WULFNET_VERSION_STRING);

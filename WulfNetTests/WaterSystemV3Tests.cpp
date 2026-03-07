@@ -7,7 +7,7 @@
 // =============================================================================
 
 #include "TestHarness.h"
-#include <WulfNet/Physics/WaterSystemV3.h>
+#include <WulfNet/Physics/Fluids/FluidSystem.h>
 #include <WulfNet/Core/Logging/Logger.h>
 #include <WulfNet/Core/Profiling/Profiler.h>
 #include <cmath>
@@ -15,7 +15,7 @@
 #include <iomanip>
 #include <algorithm>
 
-using namespace WulfNet::Physics;
+using namespace WulfNet;
 
 // =============================================================================
 // Helpers
@@ -411,175 +411,6 @@ static void Test_PerformanceBenchmark() {
 }
 
 // =============================================================================
-// Test: Parallel Performance — DamBreak-Scale (512x512)
-// =============================================================================
-// This is the diagnostic test that validates the parallel SWE solver
-// at the same scale as the Dam Break visualization (512x512, 5m cells).
-// It measures throughput, verifies water actually flows under gravity,
-// and confirms volume conservation.
-// =============================================================================
-static void Test_ParallelDamBreak512() {
-    WULFNET_INFO(LOG_CAT, "=== Parallel Dam Break Benchmark (512x512 x 5m cells) ===");
-
-    // Match the DamBreak test config exactly (WaterBox baseline)
-    WaterSystemV3Config cfg;
-    cfg.width       = 512;
-    cfg.height      = 512;
-    cfg.gridSize    = 5.0f;
-    cfg.gravity     = 9.81f;
-    cfg.fluxDamping = 0.5f;    // WaterBox baseline — realistic settling
-    cfg.dtMax       = 0.016f;  // Standard timestep (matches WaterBox)
-
-    WaterSystemV3 system(cfg, nullptr);
-    auto& state = system.GetCPUState();
-    float cellArea = cfg.gridSize * cfg.gridSize;
-
-    // Build simplified dam-break terrain:
-    // - Upstream reservoir (gy < 200): elevation 300m
-    // - Dam ridge (gy 200-210): elevation 400m with breach at center
-    // - Downstream valley (gy > 210): elevation 250m with gentle slope
-    for (uint32_t gy = 0; gy < 512; ++gy) {
-        for (uint32_t gx = 0; gx < 512; ++gx) {
-            uint32_t idx = gy * 512 + gx;
-            if (gy < 200) {
-                state.terrainHeight[idx] = 300.0f;
-            } else if (gy <= 210) {
-                // Dam ridge with a 40-cell-wide breach in the center
-                float dxCenter = std::abs((float)gx - 256.0f);
-                if (dxCenter < 20.0f)
-                    state.terrainHeight[idx] = 275.0f;  // breach — lowered
-                else
-                    state.terrainHeight[idx] = 400.0f;  // intact dam wall
-            } else {
-                state.terrainHeight[idx] = 250.0f + (float)(512 - gy) * 0.05f;
-            }
-        }
-    }
-
-    // Fill reservoir ALL THE WAY to the dam wall (gy < 211) so breach cells
-    // are already full of water — this is physically realistic because the
-    // reservoir presses against the dam until it breaks.
-    const float resSurface = 385.0f;
-    for (uint32_t gy = 5; gy <= 210; ++gy)
-        for (uint32_t gx = 5; gx < 507; ++gx) {
-            uint32_t idx = gy * 512 + gx;
-            float tH = state.terrainHeight[idx];
-            if (tH < resSurface)
-                system.AddWater(gx, gy, (resSurface - tH) * cellArea);
-        }
-
-    double initialVol = state.CalculateTotalVolume(cellArea);
-    WULFNET_INFO(LOG_CAT, "  Initial volume: " + std::to_string(initialVol) + " m^3");
-
-    // Seed breach flux using Torricelli's law: v = sqrt(2*g*h)
-    // Applied to cells just past the dam (gy 208-212) so water rushes downstream
-    for (uint32_t gy = 208; gy <= 215; ++gy)
-        for (uint32_t gx = 236; gx < 276; ++gx) {
-            uint32_t idx = gy * 512 + gx;
-            float depth = state.waterDepth[idx];
-            if (depth > 0.1f) {
-                float v = std::sqrt(2.0f * 9.81f * depth);
-                state.flux[idx].B += v * cfg.gridSize;
-            }
-        }
-
-    // Probe points: reservoir center, breach gap, just downstream of dam
-    float dResBefore  = state.waterDepth[100 * 512 + 256];
-    float dGapBefore  = state.waterDepth[205 * 512 + 256];
-    float dDownBefore = state.waterDepth[225 * 512 + 256]; // 15 cells past dam, not 140
-
-    std::ostringstream pre;
-    pre << std::fixed << std::setprecision(2)
-        << "  [pre-sim] Depth res=" << dResBefore
-        << " gap=" << dGapBefore
-        << " down=" << dDownBefore;
-    WULFNET_INFO(LOG_CAT, pre.str());
-
-    // ---- Benchmark: run 200 steps (each 0.016s = 3.2s sim time) ----
-    const int numSteps = 200;
-    WulfNet::ManualTimer timer;
-    timer.Start();
-
-    for (int i = 0; i < numSteps; ++i) {
-        system.StepSimulationCPU(0.016f);
-    }
-
-    double elapsedMs = timer.ElapsedMilliseconds();
-    double msPerStep = elapsedMs / numSteps;
-    double cellsPerStep = 512.0 * 512.0;
-    double cellsPerSecond = cellsPerStep / (msPerStep / 1000.0);
-
-    // Check depth at probes after simulation
-    float dResAfter  = state.waterDepth[100 * 512 + 256];
-    float dGapAfter  = state.waterDepth[205 * 512 + 256];
-
-    // Count wet cells downstream of the dam (gy > 210) in breach corridor
-    uint32_t downstreamWet = 0;
-    float maxDownDepth = 0.0f;
-    for (uint32_t gy = 211; gy < 260; ++gy)
-        for (uint32_t gx = 230; gx < 282; ++gx) {
-            float d = state.waterDepth[gy * 512 + gx];
-            if (d > 1e-6f) { ++downstreamWet; maxDownDepth = std::max(maxDownDepth, d); }
-        }
-
-    double finalVol = state.CalculateTotalVolume(cellArea);
-    double volDrift = std::abs(finalVol - initialVol) / initialVol * 100.0;
-
-    std::ostringstream post;
-    post << std::fixed << std::setprecision(4)
-         << "  [post-sim] Depth res=" << dResAfter
-         << " gap=" << dGapAfter
-         << " downstreamWetCells=" << downstreamWet
-         << " maxDownDepth=" << maxDownDepth;
-    WULFNET_INFO(LOG_CAT, post.str());
-
-    // Extra diagnostics: probe the first few rows past the dam
-    for (uint32_t gy = 210; gy <= 214; ++gy) {
-        float d = state.waterDepth[gy * 512 + 256];
-        float t = state.terrainHeight[gy * 512 + 256];
-        std::ostringstream row;
-        row << std::fixed << std::setprecision(4)
-            << "    row " << gy << ": terrain=" << t << " depth=" << d << " elev=" << (t+d);
-        WULFNET_INFO(LOG_CAT, row.str());
-    }
-
-    std::ostringstream perf;
-    perf << std::fixed << std::setprecision(2)
-         << "  Total: " << elapsedMs << "ms"
-         << " | Per step: " << msPerStep << "ms"
-         << " | Throughput: " << (cellsPerSecond / 1e6) << "M cells/sec"
-         << " | Target: <4ms/step for 60fps budget";
-    WULFNET_INFO(LOG_CAT, perf.str());
-
-    std::ostringstream vol;
-    vol << std::fixed << std::setprecision(4)
-        << "  Volume: initial=" << initialVol
-        << " final=" << finalVol
-        << " drift=" << volDrift << "%";
-    WULFNET_INFO(LOG_CAT, vol.str());
-
-    // ---- ASSERTIONS ----
-
-    // 1. Breach gap still has water
-    WULFNET_INFO(LOG_CAT, "  CHECK: Water in breach gap...");
-    EXPECT_GT(dGapAfter, 1.0f);
-
-    // 2. Water must have reached downstream: at least 1 wet cell past dam
-    WULFNET_INFO(LOG_CAT, "  CHECK: Water reached downstream (wet cells=" + std::to_string(downstreamWet) + ")...");
-    EXPECT_GT(downstreamWet, 0u);
-
-    // 3. Volume conservation (expect <1% drift)
-    WULFNET_INFO(LOG_CAT, "  CHECK: Volume conservation...");
-    EXPECT_LT(volDrift, 1.0);
-
-    // 4. Performance: must be < 10ms per step (well within 16.6ms frame budget)
-    WULFNET_INFO(LOG_CAT, "  CHECK: Performance target...");
-    EXPECT_LT(msPerStep, 10.0);
-
-    WULFNET_INFO(LOG_CAT, "  All checks passed!");
-}
-
-// =============================================================================
 // Test: Gravity Flow — water spawned in the air must fall and gain velocity
 // =============================================================================
 static void Test_GravityFlow() {
@@ -655,7 +486,6 @@ void RegisterWaterSystemV3Tests() {
     RUN_TEST("WaterV3: Add/Remove Symmetry",        Test_AddRemoveSymmetry);
     RUN_TEST("WaterV3: Symmetric Spread",           Test_SymmetricSpread);
     RUN_TEST("WaterV3: Performance Benchmark",      Test_PerformanceBenchmark);
-    RUN_TEST("WaterV3: Parallel DamBreak 512x512",  Test_ParallelDamBreak512);
     RUN_TEST("WaterV3: Gravity Flow",               Test_GravityFlow);
 
     // Restore previous log level

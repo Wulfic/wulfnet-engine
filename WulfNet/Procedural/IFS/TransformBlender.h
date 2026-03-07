@@ -29,7 +29,7 @@ public:
     const std::vector<TransformInstructions>& GetBlendedSet() const { return m_blendedSet; }
 
     /// Get GPU-ready matrices from the current blended set
-    std::vector<GPUMat4x4> GetBlendedMatrices() const;
+    std::vector<Mat4> GetBlendedMatrices() const;
 
     /// Directly set blend factor (0 = set1, 1 = set2)
     void SetBlendFactor(float t) { m_t = t; }

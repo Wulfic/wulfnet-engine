@@ -11,8 +11,6 @@
 #include "WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h"
 #include "WulfNet/Rendering/SoftwareRasterizer/GBuffer.h"
 #include <vector>
-#include <thread>
-#include <atomic>
 #include <functional>
 
 namespace WulfNet {
@@ -80,10 +78,8 @@ private:
     std::vector<SoftMesh> m_meshes;
     std::vector<SoftTexture> m_textures;
 
-    // Threading
+    // Threading (uses Core/Threading/ThreadPool)
     int m_threadCount = 1;
-    std::vector<std::thread> m_threads;
-    std::atomic<int> m_workCounter{0};
 };
 
 } // namespace WulfNet

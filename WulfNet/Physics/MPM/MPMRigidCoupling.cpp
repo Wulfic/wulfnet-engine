@@ -13,6 +13,10 @@
 
 #include <cmath>
 #include <algorithm>
+
+#ifdef WULFNET_HAS_OPENMP
+#include <omp.h>
+#endif
 #include <limits>
 
 namespace WulfNet {
@@ -449,8 +453,146 @@ void MPMRigidCoupling::ComputeCoupling(
 
     float maxForce = 0.0f;
     float totalForce = 0.0f;
+    uint32_t totalContacts = 0;
 
     // 2. For each particle, check interaction with each body
+    // Use per-thread accumulators to avoid data races on body forces
+    const int numBodies = static_cast<int>(m_bodies.size());
+
+#ifdef WULFNET_HAS_OPENMP
+    #pragma omp parallel
+    {
+        // Per-thread accumulators for body forces
+        std::vector<float> localFX(numBodies, 0.0f), localFY(numBodies, 0.0f), localFZ(numBodies, 0.0f);
+        std::vector<float> localTX(numBodies, 0.0f), localTY(numBodies, 0.0f), localTZ(numBodies, 0.0f);
+        std::vector<int> localCC(numBodies, 0);
+        float localMaxForce = 0.0f;
+        float localTotalForce = 0.0f;
+        uint32_t localContacts = 0;
+
+        #pragma omp for schedule(static) nowait
+        for (int pi = 0; pi < static_cast<int>(particleCount); ++pi) {
+            MPMParticle& p = particles[pi];
+
+            for (int bi = 0; bi < numBodies; ++bi) {
+                CoupledRigidBody& body = m_bodies[bi];
+                if (!body.enabled) continue;
+
+                float nx, ny, nz;
+                float dist = ComputeBodySDF(body, p.x, p.y, p.z, nx, ny, nz);
+                if (dist > m_config.interactionRadius) continue;
+
+                localContacts++;
+
+                if (m_config.enableParticleToBody && dist < m_config.interactionRadius) {
+                    float penetration = m_config.interactionRadius - dist;
+                    float forceScale = std::min(m_config.penaltyStiffness * penetration, m_config.maxCouplingForce);
+
+                    float fx = forceScale * nx;
+                    float fy = forceScale * ny;
+                    float fz = forceScale * nz;
+
+                    float surfVx, surfVy, surfVz;
+                    GetBodySurfaceVelocity(bi, p.x, p.y, p.z, surfVx, surfVy, surfVz);
+
+                    float relVx = p.vx - surfVx;
+                    float relVy = p.vy - surfVy;
+                    float relVz = p.vz - surfVz;
+                    float relVn = relVx * nx + relVy * ny + relVz * nz;
+
+                    float dampForce = m_config.dampingCoefficient * relVn;
+                    fx += dampForce * nx;
+                    fy += dampForce * ny;
+                    fz += dampForce * nz;
+
+                    if (m_config.enableFriction && dist < 0.0f) {
+                        float tanVx = relVx - relVn * nx;
+                        float tanVy = relVy - relVn * ny;
+                        float tanVz = relVz - relVn * nz;
+                        float tanSpeed = std::sqrt(tanVx * tanVx + tanVy * tanVy + tanVz * tanVz);
+                        if (tanSpeed > 1e-8f) {
+                            float frictionMag = std::min(
+                                m_config.frictionCoefficient * std::abs(forceScale),
+                                m_config.dampingCoefficient * tanSpeed);
+                            float invTan = frictionMag / tanSpeed;
+                            fx += tanVx * invTan;
+                            fy += tanVy * invTan;
+                            fz += tanVz * invTan;
+                        }
+                    }
+
+                    float forceMag = std::sqrt(fx * fx + fy * fy + fz * fz);
+                    localMaxForce = std::max(localMaxForce, forceMag);
+                    localTotalForce += forceMag;
+
+                    // Accumulate into per-thread arrays (Newton's 3rd law — negated)
+                    localFX[bi] -= fx;
+                    localFY[bi] -= fy;
+                    localFZ[bi] -= fz;
+
+                    float rx = p.x - body.posX;
+                    float ry = p.y - body.posY;
+                    float rz = p.z - body.posZ;
+                    localTX[bi] -= (ry * fz - rz * fy);
+                    localTY[bi] -= (rz * fx - rx * fz);
+                    localTZ[bi] -= (rx * fy - ry * fx);
+                    localCC[bi]++;
+                }
+
+                if (m_config.enableBodyToParticle && dist < 0.0f) {
+                    float surfVx, surfVy, surfVz;
+                    GetBodySurfaceVelocity(bi, p.x, p.y, p.z, surfVx, surfVy, surfVz);
+                    float relVn = (p.vx - surfVx) * nx + (p.vy - surfVy) * ny + (p.vz - surfVz) * nz;
+
+                    if (relVn < 0.0f) {
+                        float strength = body.couplingStrength;
+                        p.vx -= strength * relVn * nx;
+                        p.vy -= strength * relVn * ny;
+                        p.vz -= strength * relVn * nz;
+
+                        if (m_config.enableFriction) {
+                            float tanVx = (p.vx - surfVx) - ((p.vx - surfVx) * nx + (p.vy - surfVy) * ny + (p.vz - surfVz) * nz) * nx;
+                            float tanVy = (p.vy - surfVy) - ((p.vx - surfVx) * nx + (p.vy - surfVy) * ny + (p.vz - surfVz) * nz) * ny;
+                            float tanVz = (p.vz - surfVz) - ((p.vx - surfVx) * nx + (p.vy - surfVy) * ny + (p.vz - surfVz) * nz) * nz;
+                            float tanSpeed = std::sqrt(tanVx * tanVx + tanVy * tanVy + tanVz * tanVz);
+                            if (tanSpeed > 1e-8f) {
+                                float frictionScale = std::min(1.0f,
+                                    body.friction * std::abs(relVn) / tanSpeed);
+                                p.vx -= strength * frictionScale * tanVx;
+                                p.vy -= strength * frictionScale * tanVy;
+                                p.vz -= strength * frictionScale * tanVz;
+                            }
+                        }
+
+                        float pushDist = -dist * strength;
+                        p.x += pushDist * nx;
+                        p.y += pushDist * ny;
+                        p.z += pushDist * nz;
+                    }
+                }
+            }
+        }
+
+        // Merge per-thread accumulators into body data
+        #pragma omp critical
+        {
+            for (int bi = 0; bi < numBodies; ++bi) {
+                m_bodies[bi].accForceX += localFX[bi];
+                m_bodies[bi].accForceY += localFY[bi];
+                m_bodies[bi].accForceZ += localFZ[bi];
+                m_bodies[bi].accTorqueX += localTX[bi];
+                m_bodies[bi].accTorqueY += localTY[bi];
+                m_bodies[bi].accTorqueZ += localTZ[bi];
+                m_bodies[bi].contactCount += localCC[bi];
+            }
+            maxForce = std::max(maxForce, localMaxForce);
+            totalForce += localTotalForce;
+            totalContacts += localContacts;
+        }
+    }
+    m_stats.particleBodyContacts = totalContacts;
+#else
+    // Serial fallback
     for (uint32_t pi = 0; pi < particleCount; ++pi) {
         MPMParticle& p = particles[pi];
 
@@ -566,6 +708,7 @@ void MPMRigidCoupling::ComputeCoupling(
             }
         }
     }
+#endif
 
     m_stats.maxForceApplied = maxForce;
     m_stats.totalForceApplied = totalForce;

@@ -14,16 +14,21 @@ set(WULFNET_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Collect source files
 set(WULFNET_SOURCES
+    # Engine Core
+    Engine.cpp
+
     # Core
     Core/Logging/Logger.cpp
     Core/Profiling/Profiler.cpp
     Core/System/SystemMonitor.cpp
+    Core/System/PerfLogger.cpp
+    Core/Threading/ThreadPool.cpp
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.cpp
 
-    # Physics - Water (SWE 2.5D)
-    Physics/WaterSystemV3.cpp
+    # Physics - Fluids (SWE 2.5D) [renamed from WaterSystemV3]
+    Physics/Fluids/FluidSystem.cpp
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.cpp
@@ -41,8 +46,10 @@ set(WULFNET_SOURCES
 
     # GPU Compute
     Compute/Vulkan/VulkanContext.cpp
+    Compute/Vulkan/VulkanLoader.cpp
+    Compute/Vulkan/VulkanFramePipeline.cpp
     Compute/Memory/ComputeBuffer.cpp
-    Compute/Shaders/ComputePipeline.cpp
+    Compute/Pipelines/ComputePipeline.cpp
     Compute/Fluids/SWEComputeGPU.cpp
     Compute/Reduction/ParallelReduction.cpp
 
@@ -58,11 +65,15 @@ set(WULFNET_SOURCES
     Rendering/SoftwareRasterizer/DeferredShading.cpp
     Rendering/SoftwareRasterizer/OcclusionCuller.cpp
 
-    # Rendering - Pipeline & Effects
-    Rendering/SoftwareRasterizer/ShadowMap.cpp
-    Rendering/SoftwareRasterizer/GlobalIllumination.cpp
-    Rendering/SoftwareRasterizer/VolumetricRenderer.cpp
-    Rendering/SoftwareRasterizer/RenderPipeline.cpp
+    # Rendering - Lighting
+    Rendering/Lighting/ShadowMap.cpp
+    Rendering/Lighting/GlobalIllumination.cpp
+
+    # Rendering - Effects
+    Rendering/Effects/VolumetricRenderer.cpp
+
+    # Rendering - Pipeline
+    Rendering/RenderPipeline.cpp
 
     # Audio - Core
     Audio/Core/AudioTypes.cpp
@@ -79,17 +90,30 @@ set(WULFNET_HEADERS
     # Main header
     WulfNet.h
 
+    # Engine Core & Public API
+    API.h
+    Version.h
+    ForwardDecl.h
+    EngineConfig.h
+    Engine.h
+
     # Core
     Core/Logging/Logger.h
     Core/Profiling/Profiler.h
     Core/System/SystemMonitor.h
+    Core/System/PerfLogger.h
+    Core/Threading/ThreadPool.h
+    Core/Memory/FrameAllocator.h
+    Core/Math/MathTypes.h
+    Core/Math/MathUtils.h
     Core/Math/PerlinNoise.h
 
     # Physics Integration
     Physics/Integration/PhysicsWorld.h
 
-    # Physics - Water (SWE 2.5D)
-    Physics/WaterSystemV3.h
+    # Physics - Fluids (SWE 2.5D) [renamed from WaterSystemV3]
+    Physics/Fluids/FluidSystem.h
+    Physics/WaterSystemV3.h       # Backward-compat redirect
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.h
@@ -108,7 +132,8 @@ set(WULFNET_HEADERS
     Compute/Compute.h
     Compute/Vulkan/VulkanContext.h
     Compute/Memory/ComputeBuffer.h
-    Compute/Shaders/ComputePipeline.h
+    Compute/Pipelines/ComputePipeline.h
+    Compute/Shaders/ComputePipeline.h    # Backward-compat redirect
     Compute/Fluids/SWEComputeGPU.h
     Compute/Reduction/ParallelReduction.h
 
@@ -118,18 +143,31 @@ set(WULFNET_HEADERS
     Procedural/IFS/TransformBlender.h
     Procedural/IFS/IFSSystem.h
 
-    # Rendering - Software Rasterizer
-    Rendering/SoftwareRasterizer/SoftRasterTypes.h
+    # Rendering - Types
+    Rendering/Types/RenderTypes.h
+
+    # Rendering - Software Rasterizer (core)
+    Rendering/SoftwareRasterizer/SoftRasterTypes.h   # Backward-compat redirect
     Rendering/SoftwareRasterizer/GBuffer.h
     Rendering/SoftwareRasterizer/SoftwareRasterizer.h
     Rendering/SoftwareRasterizer/DeferredShading.h
     Rendering/SoftwareRasterizer/OcclusionCuller.h
+    Rendering/SoftwareRasterizer/ShadowMap.h          # Backward-compat redirect
+    Rendering/SoftwareRasterizer/GlobalIllumination.h # Backward-compat redirect
+    Rendering/SoftwareRasterizer/VolumetricRenderer.h # Backward-compat redirect
+    Rendering/SoftwareRasterizer/RenderPipeline.h     # Backward-compat redirect
 
-    # Rendering - Pipeline & Effects
-    Rendering/SoftwareRasterizer/ShadowMap.h
-    Rendering/SoftwareRasterizer/GlobalIllumination.h
-    Rendering/SoftwareRasterizer/VolumetricRenderer.h
-    Rendering/SoftwareRasterizer/RenderPipeline.h
+    # Rendering - Lighting (new location)
+    Rendering/Lighting/ShadowMap.h
+    Rendering/Lighting/GlobalIllumination.h
+
+    # Rendering - Effects (new location)
+    Rendering/Effects/VolumetricRenderer.h
+
+    # Rendering - Pipeline & Abstraction
+    Rendering/IRenderer.h
+    Rendering/RenderCommand.h
+    Rendering/RenderPipeline.h
 
     # Audio - Core
     Audio/Core/AudioTypes.h
@@ -199,6 +237,11 @@ endif()
 # MSVC-specific settings - disable some warnings that are too strict for our code
 if(MSVC)
     target_compile_options(WulfNet PRIVATE
+        # Release-specific optimizations
+        $<$<CONFIG:Release>:/Oi>   # Enable intrinsic functions
+        $<$<CONFIG:Release>:/Ot>   # Favor fast code
+        $<$<CONFIG:Release>:/GS->  # Disable security checks in hot paths
+        # Warning suppressions
         /wd4820  # padding added
         /wd4514  # unreferenced inline function removed
         /wd4625  # copy constructor was implicitly deleted
@@ -220,6 +263,34 @@ if(MSVC)
         /GL-     # Disable whole program optimization (LTCG conflicts with Jolt)
         /WX-     # Don't treat warnings as errors
     )
+else()
+    # GCC/Clang Release optimizations
+    target_compile_options(WulfNet PRIVATE
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Release>:-fno-math-errno>  # Safe FP optimization (no errno on math funcs)
+    )
+endif()
+
+# SIMD architecture flags (opt-in to avoid breaking builds on older hardware)
+option(WULFNET_ENABLE_AVX2 "Enable AVX2 instruction set for SIMD optimizations" OFF)
+if(WULFNET_ENABLE_AVX2)
+    if(MSVC)
+        target_compile_options(WulfNet PRIVATE /arch:AVX2)
+    else()
+        target_compile_options(WulfNet PRIVATE -mavx2 -mfma)
+    endif()
+    target_compile_definitions(WulfNet PUBLIC WULFNET_HAS_AVX2)
+    message(STATUS "  AVX2 SIMD enabled")
+elseif(MSVC)
+    # MSVC defaults to SSE2 on x64 — no flag needed
+    target_compile_definitions(WulfNet PUBLIC WULFNET_HAS_SSE2)
+else()
+    # Check for SSE2 on GCC/Clang (enabled by default on x86_64)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-msse2" HAS_SSE2)
+    if(HAS_SSE2)
+        target_compile_definitions(WulfNet PUBLIC WULFNET_HAS_SSE2)
+    endif()
 endif()
 
 # Compiler definitions

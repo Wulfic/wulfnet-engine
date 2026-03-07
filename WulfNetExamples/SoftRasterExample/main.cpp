@@ -178,7 +178,7 @@ int main() {
 
     // Cleanup
     rasterizer.Shutdown();
-    WulfNet::Logger::Shutdown();
+    WulfNet::Logger::Get().Flush();
 
     std::cout << "\nSoftware Rasterizer Example completed successfully!" << std::endl;
     return 0;

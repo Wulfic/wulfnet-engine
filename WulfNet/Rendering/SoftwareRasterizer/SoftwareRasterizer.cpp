@@ -3,6 +3,7 @@
 // =============================================================================
 
 #include "WulfNet/Rendering/SoftwareRasterizer/SoftwareRasterizer.h"
+#include "WulfNet/Core/Threading/ThreadPool.h"
 #include <algorithm>
 #include <cmath>
 
@@ -105,62 +106,50 @@ SoftVec3 SoftwareRasterizer::ProjectToScreen(const SoftVec3& worldPos, const Sof
 
 void SoftwareRasterizer::RenderObjects(const SoftTransform* objects, int count,
                                         const SoftCamera& camera) {
-    // Object-level parallelism with work-stealing
-    m_workCounter.store(0);
+    // Object-level parallelism via persistent ThreadPool
+    auto renderObject = [&](int objIdx) {
+        const SoftTransform& obj = objects[objIdx];
+        if (obj.meshIndex < 0 || obj.meshIndex >= static_cast<int>(m_meshes.size())) return;
+        const SoftMesh& mesh = m_meshes[obj.meshIndex];
 
-    auto workerFunc = [&]() {
-        while (true) {
-            int objIdx = m_workCounter.fetch_add(1);
-            if (objIdx >= count) break;
+        size_t triCount = mesh.indices.size() / 3;
+        for (size_t tri = 0; tri < triCount; ++tri) {
+            uint32_t i0 = mesh.indices[tri * 3 + 0];
+            uint32_t i1 = mesh.indices[tri * 3 + 1];
+            uint32_t i2 = mesh.indices[tri * 3 + 2];
 
-            const SoftTransform& obj = objects[objIdx];
-            if (obj.meshIndex < 0 || obj.meshIndex >= static_cast<int>(m_meshes.size())) continue;
-            const SoftMesh& mesh = m_meshes[obj.meshIndex];
+            // Transform vertices to world space
+            SoftVertex wv0 = mesh.vertices[i0];
+            SoftVertex wv1 = mesh.vertices[i1];
+            SoftVertex wv2 = mesh.vertices[i2];
 
-            size_t triCount = mesh.indices.size() / 3;
-            for (size_t tri = 0; tri < triCount; ++tri) {
-                uint32_t i0 = mesh.indices[tri * 3 + 0];
-                uint32_t i1 = mesh.indices[tri * 3 + 1];
-                uint32_t i2 = mesh.indices[tri * 3 + 2];
+            wv0.position = TransformPoint(wv0.position, obj);
+            wv1.position = TransformPoint(wv1.position, obj);
+            wv2.position = TransformPoint(wv2.position, obj);
+            wv0.normal = TransformNormal(wv0.normal, obj);
+            wv1.normal = TransformNormal(wv1.normal, obj);
+            wv2.normal = TransformNormal(wv2.normal, obj);
 
-                // Transform vertices to world space
-                SoftVertex wv0 = mesh.vertices[i0];
-                SoftVertex wv1 = mesh.vertices[i1];
-                SoftVertex wv2 = mesh.vertices[i2];
+            SoftVec3 faceNormal = tri < mesh.faceNormals.size()
+                ? TransformNormal(mesh.faceNormals[tri], obj)
+                : (wv1.position - wv0.position).Cross(wv2.position - wv0.position).Normalized();
 
-                wv0.position = TransformPoint(wv0.position, obj);
-                wv1.position = TransformPoint(wv1.position, obj);
-                wv2.position = TransformPoint(wv2.position, obj);
-                wv0.normal = TransformNormal(wv0.normal, obj);
-                wv1.normal = TransformNormal(wv1.normal, obj);
-                wv2.normal = TransformNormal(wv2.normal, obj);
-
-                SoftVec3 faceNormal = tri < mesh.faceNormals.size()
-                    ? TransformNormal(mesh.faceNormals[tri], obj)
-                    : (wv1.position - wv0.position).Cross(wv2.position - wv0.position).Normalized();
-
-                // Backface culling
-                if (m_config.enableBackfaceCulling) {
-                    SoftVec3 viewDir = (wv0.position - camera.position).Normalized();
-                    if (faceNormal.Dot(viewDir) > 0.0f) continue;
-                }
-
-                RasterizeTriangle(wv0, wv1, wv2, faceNormal, mesh.material, camera, obj.tint);
+            // Backface culling
+            if (m_config.enableBackfaceCulling) {
+                SoftVec3 viewDir = (wv0.position - camera.position).Normalized();
+                if (faceNormal.Dot(viewDir) > 0.0f) continue;
             }
+
+            RasterizeTriangle(wv0, wv1, wv2, faceNormal, mesh.material, camera, obj.tint);
         }
     };
 
     if (m_threadCount <= 1 || count <= 4) {
-        workerFunc();
+        for (int i = 0; i < count; ++i) {
+            renderObject(i);
+        }
     } else {
-        m_threads.clear();
-        m_threads.reserve(m_threadCount);
-        for (int t = 0; t < m_threadCount; ++t) {
-            m_threads.emplace_back(workerFunc);
-        }
-        for (auto& thread : m_threads) {
-            thread.join();
-        }
+        ThreadPool::Get().ParallelFor(0, count, renderObject);
     }
 }
 
@@ -201,23 +190,35 @@ void SoftwareRasterizer::RasterizeTriangle(const SoftVertex& v0, const SoftVerte
     float invZ1 = 1.0f / s1.z;
     float invZ2 = 1.0f / s2.z;
 
-    // Scanline rasterization
+    // --- Incremental barycentric stepping (10.5.2) ---
+    // Edge function gradients: dw/dx and dw/dy are constant across the triangle.
+    // This replaces per-pixel recomputation (12 muls + 6 subs) with 3 adds per pixel.
+    float dw0_dx = (s1.y - s2.y) * invArea;
+    float dw1_dx = (s2.y - s0.y) * invArea;
+    float dw2_dx = (s0.y - s1.y) * invArea;
+    float dw0_dy = (s2.x - s1.x) * invArea;
+    float dw1_dy = (s0.x - s2.x) * invArea;
+    float dw2_dy = (s1.x - s0.x) * invArea;
+
+    // Compute initial barycentric coordinates at (startX + 0.5, startY + 0.5)
+    float fx0 = static_cast<float>(startX) + 0.5f;
+    float fy0 = static_cast<float>(startY) + 0.5f;
+    float w0_row = ((s1.x - fx0) * (s2.y - fy0) - (s2.x - fx0) * (s1.y - fy0)) * invArea;
+    float w1_row = ((s2.x - fx0) * (s0.y - fy0) - (s0.x - fx0) * (s2.y - fy0)) * invArea;
+    float w2_row = ((s0.x - fx0) * (s1.y - fy0) - (s1.x - fx0) * (s0.y - fy0)) * invArea;
+
+    // Scanline rasterization with incremental barycentrics
     for (int py = startY; py <= endY; ++py) {
+        float w0 = w0_row;
+        float w1 = w1_row;
+        float w2 = w2_row;
+
         for (int px = startX; px <= endX; ++px) {
-            float fx = static_cast<float>(px) + 0.5f;
-            float fy = static_cast<float>(py) + 0.5f;
-
-            // Barycentric coordinates via edge functions
-            float w0 = (s1.x - fx) * (s2.y - fy) - (s2.x - fx) * (s1.y - fy);
-            float w1 = (s2.x - fx) * (s0.y - fy) - (s0.x - fx) * (s2.y - fy);
-            float w2 = (s0.x - fx) * (s1.y - fy) - (s1.x - fx) * (s0.y - fy);
-
-            w0 *= invArea;
-            w1 *= invArea;
-            w2 *= invArea;
-
-            // Inside test
-            if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+            // Inside test (all barycentrics >= 0)
+            if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) {
+                w0 += dw0_dx; w1 += dw1_dx; w2 += dw2_dx;
+                continue;
+            }
 
             // Perspective-correct depth
             float invZInterp = w0 * invZ0 + w1 * invZ1 + w2 * invZ2;
@@ -255,7 +256,15 @@ void SoftwareRasterizer::RasterizeTriangle(const SoftVertex& v0, const SoftVerte
             uint8_t ny = static_cast<uint8_t>((normal.y * 0.5f + 0.5f) * 255.0f);
             uint8_t nz = static_cast<uint8_t>((normal.z * 0.5f + 0.5f) * 255.0f);
             m_gbuffer.SetNormal(px, py, {nx, ny, nz, 255});
+
+            // Step barycentrics for next pixel
+            w0 += dw0_dx; w1 += dw1_dx; w2 += dw2_dx;
         }
+
+        // Step barycentrics for next scanline
+        w0_row += dw0_dy;
+        w1_row += dw1_dy;
+        w2_row += dw2_dy;
     }
 }
 

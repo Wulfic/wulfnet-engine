@@ -2,9 +2,43 @@
 
 A **fully-featured, AAA-grade physics and game engine** built on top of [Jolt Physics](https://github.com/jrouwe/JoltPhysics). WulfNet extends Jolt's battle-tested rigid body physics with advanced simulations including fluids, deformables, destruction, and a complete rendering/audio pipeline.
 
-## 🎯 Project Vision
+**Version 1.0.0** — 537 tests, 100% pass rate
 
-WulfNet Engine leverages Jolt Physics (used in Horizon Forbidden West and Death Stranding 2) as its foundation, focusing development on **extending capabilities** rather than reinventing solved problems.
+## Quick Start
+
+```cpp
+#include <WulfNet/WulfNet.h>
+#include <WulfNet/Engine.h>
+
+int main() {
+    using namespace WulfNet;
+
+    Logger::Initialize();
+
+    // Configure the engine (HeadlessPhysics = physics + compute, no rendering/audio)
+    EngineConfig config = EngineConfig::HeadlessPhysics();
+    config.appName = "MyApp";
+
+    Engine engine;
+    if (engine.Initialize(config) != EngineInitResult::Success)
+        return 1;
+
+    // Game loop
+    while (engine.IsRunning()) {
+        engine.BeginFrame();
+
+        PhysicsWorld& physics = engine.GetPhysics();
+        // ... your game logic ...
+
+        engine.EndFrame();  // Steps physics at fixed timestep
+    }
+
+    engine.Shutdown();
+    return 0;
+}
+```
+
+See [WulfNetExamples/EngineDemo](WulfNetExamples/EngineDemo/main.cpp) for a complete example with physics scene setup, frame simulation, and PPM image output.
 
 | Jolt Physics Provides | WulfNet Engine Adds |
 |-----------------------|---------------------|
@@ -36,85 +70,121 @@ WulfNet Engine leverages Jolt Physics (used in Horizon Forbidden West and Death 
 - **Vulkan Renderer** - PBR materials, GI, volumetrics
 - **Acoustic Simulation** - Ray-traced reverb, HRTF spatial audio
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     WULFNET ENGINE LAYER                         │
-├──────────────┬──────────────┬──────────────┬───────────────────┤
-│   Extended   │   Renderer   │    Audio     │    Scene Graph    │
-│   Physics    │   (Vulkan)   │   System     │                   │
-├──────────────┴──────────────┴──────────────┴───────────────────┤
-│                    JOLT PHYSICS FOUNDATION                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Rigid Bodies  │  Soft Bodies  │  Vehicles  │  Constraints      │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        APPLICATION LAYER                              │
+│    Game Logic  │  EngineDemo  │  HelloWulfNet  │  Custom App         │
+├──────────────────────────────────────────────────────────────────────┤
+│              WulfNet::Engine  (single entry point)                    │
+│  Initialize() → BeginFrame() / EndFrame() → Shutdown()               │
+├──────────────┬──────────────┬──────────────┬────────────────────────┤
+│  PhysicsWorld│  RenderPipeline│ AudioMixer  │  VulkanContext        │
+│  (Jolt + ext)│  (IRenderer) │  (multi-src) │  (GPU compute)        │
+├──────────────┤──────────────┤──────────────┤────────────────────────┤
+│ FluidSystem  │ ShadowMap    │ AcousticSys  │ ComputePipeline       │
+│ GaseousSystem│ GlobalIllum  │ SpatialAudio │ ComputeBuffer<T>      │
+│ Destruction  │ Volumetric   │              │ ParallelReduction     │
+│ TerrainDeform│ Deferred     │              │                        │
+│ MPMCoupling  │ OcclusionCull│              │                        │
+├──────────────┴──────────────┴──────────────┴────────────────────────┤
+│                     JOLT PHYSICS FOUNDATION                          │
+│   Rigid Bodies │ Soft Bodies │ Vehicles │ Constraints │ Collision   │
+├──────────────────────────────────────────────────────────────────────┤
+│                        CORE LAYER                                     │
+│   Logger │ Profiler (Tracy) │ SystemMonitor │ MathTypes │ Platform  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **CMake** 3.25 or higher
-- **C++20** compatible compiler
-  - Visual Studio 2022 (Windows)
+- **CMake** 3.20 or higher
+- **C++17** compatible compiler
+  - Visual Studio 2022+ (Windows)
   - GCC 11+ / Clang 14+ (Linux)
   - Xcode 14+ (macOS)
-- **Vulkan SDK** (optional, for rendering/GPU compute)
+- **Vulkan SDK** (optional, for GPU compute)
 
 ### Building
 
 #### Windows (Visual Studio 2022)
 ```bash
-cd Build
+cd build
 cmake_vs2022_cl.bat
-# Open Build/VS2022_CL/WulfNetEngine.sln
+cmake --build VS2022_CL --config Release
+
+# Or use CMake presets:
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release
 ```
 
 #### Linux
 ```bash
-cd Build
+cd build
 ./cmake_linux_clang_gcc.sh Release clang++
-cd Linux_Release
-make -j$(nproc)
+cmake --build Linux_Release -j$(nproc)
+
+# Or use CMake presets:
+cmake --preset linux-clang-release
+cmake --build --preset linux-clang-release
 ```
 
-#### macOS
-```bash
-cd Build
-./cmake_xcode_macos.sh
-# Open Build/XCode_macOS/WulfNetEngine.xcodeproj
-```
-
-### Running Samples
+### Running Tests
 
 ```bash
-# Run Jolt's sample viewer (physics demos)
-./bin/JoltViewer
+cd build
 
-# Run performance benchmarks
-./bin/PerformanceTest
+# Core tests (84 tests)
+./VS2022_CL/WulfNetTests/Release/WulfNetTests.exe
+
+# Extended tests (453 tests, 19 suites)
+./VS2022_CL/WulfNetTests/Release/WulfNetExtendedTests.exe
+
+# Run a specific suite
+./VS2022_CL/WulfNetTests/Release/WulfNetExtendedTests.exe --suite=engine
+./VS2022_CL/WulfNetTests/Release/WulfNetExtendedTests.exe --suite=audio
+./VS2022_CL/WulfNetTests/Release/WulfNetExtendedTests.exe --suite=benchmark
 ```
 
-## 📁 Project Structure
+### Running Examples
+
+```bash
+cd build
+
+# Flagship demo (physics + rendering + audio)
+./VS2022_CL/WulfNetExamples/Release/EngineDemo.exe
+
+# Basic physics example
+./VS2022_CL/WulfNetExamples/Release/HelloWulfNet.exe
+
+# GPU compute demonstration
+./VS2022_CL/WulfNetExamples/Release/ComputeExample.exe
+```
+
+## Project Structure
 
 ```
 wulfnet-engine/
-├── Jolt/                 # Jolt Physics core (upstream)
-├── JoltViewer/           # Interactive physics demos
-├── Samples/              # Physics test scenes
-├── TestFramework/        # Test utilities & debug renderer
-├── UnitTests/            # Jolt unit tests
-├── PerformanceTest/      # Benchmarks
-│
-├── WulfNet/              # WulfNet extensions (coming soon)
-│   ├── Physics/          # Fluids, MPM, destruction
-│   ├── Compute/          # GPU compute layer
-│   ├── Rendering/        # Vulkan renderer
-│   └── Audio/            # Acoustic simulation
-│
-├── Build/                # Platform-specific build scripts
-├── Assets/               # Shared assets
-└── docs/                 # Documentation
+├── Jolt/                  # Jolt Physics core (upstream, never modify)
+├── WulfNet/               # WulfNet Engine library
+│   ├── Engine.h/cpp       # Single entry point
+│   ├── EngineConfig.h     # Configuration struct + presets
+│   ├── Version.h          # Version macros (1.0.0)
+│   ├── API.h              # Export/import macros
+│   ├── ForwardDecl.h      # 130+ forward declarations
+│   ├── Core/              # Logger, Profiler, SystemMonitor, Math
+│   ├── Physics/           # PhysicsWorld, Fluids, MPM, Gas, Destruction, Terrain
+│   ├── Compute/           # VulkanContext, ComputePipeline, ComputeBuffer
+│   ├── Rendering/         # RenderPipeline, SoftwareRasterizer, Lighting, Effects
+│   ├── Procedural/        # IFS fractal system
+│   └── Audio/             # AudioMixer, AcousticSystem, SpatialAudio
+├── WulfNetTests/          # 537 tests (84 core + 453 extended)
+├── WulfNetExamples/       # 5 examples (HelloWulfNet, EngineDemo, etc.)
+├── build/                 # Build scripts and CMake presets
+├── docs/                  # API reference, architecture docs
+└── Assets/                # Shaders, fonts, models
 ```
 
 ## 📊 Performance Targets
@@ -127,11 +197,12 @@ wulfnet-engine/
 | Fluid Particles | 1,000,000 @ 60 FPS | WulfNet (GPU) |
 | MPM Particles | 500,000 @ 60 FPS | WulfNet (GPU) |
 
-## 📖 Documentation
+## Documentation
 
-- [**ENGINE_PLAN.md**](ENGINE_PLAN.md) - Full technical architecture and roadmap
+- [**docs/APIReference.md**](docs/APIReference.md) - Complete API reference (v1.0.0)
+- [**ENGINE_PLAN.md**](ENGINE_PLAN.md) - Technical architecture and roadmap
+- [**REFACTOR_MASTER_PLAN.md**](REFACTOR_MASTER_PLAN.md) - 10-pass refactor plan
 - [**docs/Architecture.md**](docs/Architecture.md) - Jolt Physics architecture
-- [**docs/Samples.md**](docs/Samples.md) - Sample documentation
 
 ## 🤝 Contributing
 
@@ -155,4 +226,4 @@ Jolt Physics is licensed under the [MIT License](https://github.com/jrouwe/JoltP
 
 ---
 
-*WulfNet Engine - Built for performance, designed for extensibility*
+*WulfNet Engine v1.0.0 — Built for performance, designed for extensibility*

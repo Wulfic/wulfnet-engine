@@ -112,6 +112,15 @@ private:
 	void						DrawFPS(float inDeltaTime);
 
 	std::chrono::high_resolution_clock::time_point mLastUpdateTime;
+
+protected:
+	/// Wall-clock time in seconds for the most recent frame (measures the full frame including render + present)
+	float						mClockDeltaTime = 0.0f;
+
+	/// CPU-side frame rate cap in FPS (0 = no CPU-side cap; VSync or uncapped)
+	float						mFrameRateCap = 0.0f;
+
+private:
 	bool						mIsPaused = false;
 	bool						mSingleStep = false;
 	bool						mDebugRendererCleared = true;
@@ -121,4 +130,12 @@ private:
 	float						mResidualDeltaTime = 0.0f;
 	float						mTotalDeltaTime = 0.0f;
 	int							mNumFrames = 0;
+
+	// Cached strings for DrawFPS — updated every 0.5s, drawn every frame
+	String						mCachedFpsStr;
+	int							mCachedFpsW = 0;
+	int							mCachedFpsH = 0;
+	String						mCachedDiagStr;
+	int							mCachedDiagW = 0;
+	int							mCachedDiagH = 0;
 };

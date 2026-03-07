@@ -15,19 +15,25 @@
 
 #pragma once
 
-// Version information
-#define WULFNET_VERSION_MAJOR 0
-#define WULFNET_VERSION_MINOR 8
-#define WULFNET_VERSION_PATCH 0
-#define WULFNET_VERSION_STRING "0.8.0"
+// Version, API & Configuration
+#include "API.h"
+#include "Version.h"
+#include "ForwardDecl.h"
+#include "EngineConfig.h"
+#include "Engine.h"
 
 // =============================================================================
 // Core Systems
 // =============================================================================
 
+#include "Core/Math/MathTypes.h"
+#include "Core/Math/MathUtils.h"
 #include "Core/Logging/Logger.h"
 #include "Core/Profiling/Profiler.h"
 #include "Core/System/SystemMonitor.h"
+#include "Core/System/PerfLogger.h"
+#include "Core/Threading/ThreadPool.h"
+#include "Core/Memory/FrameAllocator.h"
 #include "Core/Math/PerlinNoise.h"
 
 // =============================================================================
@@ -36,7 +42,9 @@
 
 #include "Physics/Integration/PhysicsWorld.h"
 
-// Physics - Water (SWE 2.5D)
+// Physics - Fluids (SWE 2.5D) [renamed from WaterSystemV3]
+#include "Physics/Fluids/FluidSystem.h"
+// Backward-compat redirect (provides WulfNet::Physics:: aliases)
 #include "Physics/WaterSystemV3.h"
 
 // Physics - Material Point Method
@@ -71,15 +79,26 @@
 // Rendering Systems
 // =============================================================================
 
-#include "Rendering/SoftwareRasterizer/SoftRasterTypes.h"
+// Rendering - Types
+#include "Rendering/Types/RenderTypes.h"
+
+// Rendering - Software Rasterizer (core)
 #include "Rendering/SoftwareRasterizer/GBuffer.h"
 #include "Rendering/SoftwareRasterizer/SoftwareRasterizer.h"
 #include "Rendering/SoftwareRasterizer/DeferredShading.h"
 #include "Rendering/SoftwareRasterizer/OcclusionCuller.h"
-#include "Rendering/SoftwareRasterizer/ShadowMap.h"
-#include "Rendering/SoftwareRasterizer/GlobalIllumination.h"
-#include "Rendering/SoftwareRasterizer/VolumetricRenderer.h"
-#include "Rendering/SoftwareRasterizer/RenderPipeline.h"
+
+// Rendering - Lighting
+#include "Rendering/Lighting/ShadowMap.h"
+#include "Rendering/Lighting/GlobalIllumination.h"
+
+// Rendering - Effects
+#include "Rendering/Effects/VolumetricRenderer.h"
+
+// Rendering - Pipeline & Abstraction
+#include "Rendering/IRenderer.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderPipeline.h"
 
 // =============================================================================
 // Audio Systems

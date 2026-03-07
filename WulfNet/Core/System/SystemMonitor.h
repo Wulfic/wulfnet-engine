@@ -16,8 +16,11 @@ namespace WulfNet {
 // =============================================================================
 
 struct SystemStats {
-    // CPU Usage (0.0 - 100.0%)
+    // CPU Usage (0.0 - 100.0%) — system-wide
     float cpuUsagePercent = 0.0f;
+
+    // CPU Usage (0.0 - 100.0%) — this process only (normalized to 1 core)
+    float processCpuPercent = 0.0f;
 
     // RAM Usage
     uint64_t ramUsedBytes = 0;
@@ -75,6 +78,7 @@ public:
 
 private:
     void UpdateCPUUsage();
+    void UpdateProcessCPUUsage();
     void UpdateRAMUsage();
     void UpdateGPUUsage();
     void UpdateProcessMemory();
@@ -88,6 +92,9 @@ private:
     uint64_t m_lastCPUIdleTime = 0;
     uint64_t m_lastCPUKernelTime = 0;
     uint64_t m_lastCPUUserTime = 0;
+    uint64_t m_lastProcessKernelTime = 0;
+    uint64_t m_lastProcessUserTime = 0;
+    uint64_t m_lastProcessWallTime = 0;
 #endif
 
     // NVML handles (loaded dynamically)

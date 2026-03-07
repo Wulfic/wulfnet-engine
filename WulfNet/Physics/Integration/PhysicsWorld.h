@@ -22,6 +22,8 @@
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h>
 #include <Jolt/Physics/Collision/ObjectLayerPairFilterMask.h>
 
+#include "API.h"
+
 namespace WulfNet {
 
 // =============================================================================
@@ -29,8 +31,16 @@ namespace WulfNet {
 // =============================================================================
 
 class MPMSystem;
+class FluidSystem;
+struct FluidSystemConfig;
 class GaseousSystem;
+struct GaseousSystemConfig;
 class DestructionSystem;
+struct DestructionConfig;
+class TerrainDeformation;
+struct TerrainDeformConfig;
+class MPMRigidCoupling;
+struct MPMCouplingConfig;
 
 // =============================================================================
 // Physics World Settings
@@ -58,6 +68,16 @@ struct PhysicsWorldSettings {
     bool enableMPMPhysics = false;
     bool enableGaseousPhysics = false;
     bool enableDestructionPhysics = false;
+
+    /// Validate configuration and return true if valid.
+    bool Validate() const {
+        if (maxBodies == 0) return false;
+        if (maxBodyPairs == 0) return false;
+        if (maxContactConstraints == 0) return false;
+        if (tempAllocatorSize < 1024 * 1024) return false; // Minimum 1 MB
+        if (collisionSteps <= 0) return false;
+        return true;
+    }
 };
 
 // =============================================================================
@@ -99,7 +119,7 @@ using BodyDeactivatedCallback = std::function<void(JPH::BodyID)>;
 // Physics World Class
 // =============================================================================
 
-class PhysicsWorld {
+class WULFNET_API PhysicsWorld {
 public:
     PhysicsWorld();
     ~PhysicsWorld();
@@ -223,15 +243,33 @@ public:
     // Extended Physics Systems (WulfNet)
     // ==========================================================================
 
-    // These will be implemented in future phases
-    // MPMSystem& GetMPMSystem();
-    // GaseousSystem& GetGaseousSystem();
-    // DestructionSystem& GetDestructionSystem();
+    /// Get the fluid simulation system. Only valid if enableFluidPhysics was true.
+    FluidSystem* GetFluidSystem() { return m_fluidSystem.get(); }
+    const FluidSystem* GetFluidSystem() const { return m_fluidSystem.get(); }
+
+    /// Get the gaseous simulation system. Only valid if enableGaseousPhysics was true.
+    GaseousSystem* GetGaseousSystem() { return m_gaseousSystem.get(); }
+    const GaseousSystem* GetGaseousSystem() const { return m_gaseousSystem.get(); }
+
+    /// Get the destruction system. Only valid if enableDestructionPhysics was true.
+    DestructionSystem* GetDestructionSystem() { return m_destructionSystem.get(); }
+    const DestructionSystem* GetDestructionSystem() const { return m_destructionSystem.get(); }
+
+    /// Get the terrain deformation system (always available if physics is initialized).
+    TerrainDeformation* GetTerrainDeformation() { return m_terrainDeformation.get(); }
+    const TerrainDeformation* GetTerrainDeformation() const { return m_terrainDeformation.get(); }
+
+    /// Get the MPM-rigid coupling system. Only valid if enableMPMPhysics was true.
+    MPMRigidCoupling* GetMPMCoupling() { return m_mpmCoupling.get(); }
+    const MPMRigidCoupling* GetMPMCoupling() const { return m_mpmCoupling.get(); }
 
 private:
     // Internal initialization
     void RegisterJoltTypes();
     void CreateLayerInterfaces();
+    void InitExtendedSystems();
+    void ShutdownExtendedSystems();
+    void StepExtendedSystems(float deltaTime);
 
     // Jolt core systems
     std::unique_ptr<JPH::TempAllocator> m_tempAllocator;
@@ -262,10 +300,12 @@ private:
     // Statistics
     Statistics m_statistics;
 
-    // Extended physics systems (future phases)
-    // std::unique_ptr<MPMSystem> m_mpmSystem;
-    // std::unique_ptr<GaseousSystem> m_gaseousSystem;
-    // std::unique_ptr<DestructionSystem> m_destructionSystem;
+    // Extended physics systems
+    std::unique_ptr<FluidSystem> m_fluidSystem;
+    std::unique_ptr<GaseousSystem> m_gaseousSystem;
+    std::unique_ptr<DestructionSystem> m_destructionSystem;
+    std::unique_ptr<TerrainDeformation> m_terrainDeformation;
+    std::unique_ptr<MPMRigidCoupling> m_mpmCoupling;
 };
 
 } // namespace WulfNet

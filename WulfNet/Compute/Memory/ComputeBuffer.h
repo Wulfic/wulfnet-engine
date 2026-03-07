@@ -8,6 +8,7 @@
 #pragma once
 
 #include "WulfNet/Compute/Vulkan/VulkanContext.h"
+#include "WulfNet/Core/Math/MathTypes.h"
 #include <cstdint>
 #include <vector>
 #include <memory>
@@ -157,6 +158,22 @@ public:
     /// Download data to vector
     bool Download(std::vector<T>& data) const;
 
+    // ==========================================================================
+    // Async Data Transfer (10.2)
+    // ==========================================================================
+
+    /// Kick off an asynchronous GPU→CPU download using a fence.
+    /// Returns true if the async download was initiated successfully.
+    /// Call IsDownloadReady() to poll, then GetDownloadedData() to read results.
+    bool DownloadAsync();
+
+    /// Non-blocking check: has the async download completed?
+    bool IsDownloadReady() const;
+
+    /// Copy the downloaded data into the provided vector (only valid after
+    /// IsDownloadReady() returns true). Resets the async download state.
+    bool GetDownloadedData(std::vector<T>& outData);
+
     /// Set all elements to zero
     bool Clear();
 
@@ -208,6 +225,14 @@ private:
     GPUMemoryLocation m_location = GPUMemoryLocation::DeviceLocal;
 
     mutable T* m_mappedPtr = nullptr;
+
+    // Async readback state (10.2)
+    VkBuffer m_asyncStagingBuffer = nullptr;
+    VkDeviceMemory m_asyncStagingMemory = nullptr;
+    VkFence m_asyncFence = nullptr;
+    bool m_asyncPending = false;
+    bool CreateAsyncStagingResources();
+    void DestroyAsyncStagingResources();
 };
 
 // =============================================================================
@@ -218,10 +243,7 @@ using FloatBuffer = ComputeBuffer<float>;
 using IntBuffer = ComputeBuffer<int32_t>;
 using UIntBuffer = ComputeBuffer<uint32_t>;
 
-// Common particle/simulation data types
-struct alignas(16) Vec4 {
-    float x, y, z, w;
-};
+// Vec4 is now defined in Core/Math/MathTypes.h
 
 struct alignas(16) ParticleData {
     Vec4 position;   // xyz = position, w = mass

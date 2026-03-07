@@ -35,6 +35,15 @@ public:
 	virtual Texture *				GetShadowMap() const override		{ return mShadowMap.GetPtr(); }
 	virtual void					OnWindowResize() override;
 
+	// VSync control
+	virtual void					SetVSync(bool inEnabled) override	{ mVSyncEnabled = inEnabled; }
+	virtual bool					GetVSync() const override			{ return mVSyncEnabled; }
+
+	// Diagnostic overrides
+	virtual bool					IsTearingSupported() const override	{ return mTearingSupported; }
+	virtual float					GetPresentTimeMs() const override	{ return mPresentTimeMs; }
+	virtual float					GetFenceWaitTimeMs() const override	{ return mFenceWaitTimeMs; }
+
 	/// Create a buffer on the default heap (usable for permanent buffers)
 	ComPtr<ID3D12Resource>			CreateD3DResourceOnDefaultHeap(const void *inData, uint64 inSize);
 
@@ -75,11 +84,11 @@ private:
 	DescriptorHeapDX12				mDSVHeap;							///< Depth stencil view heap
 	DescriptorHeapDX12				mSRVHeap;							///< Shader resource view heap
 	ComPtr<IDXGISwapChain3>			mSwapChain;
-	ComPtr<ID3D12Resource>			mRenderTargets[cFrameCount];		///< Two render targets (we're double buffering in order for the CPU to continue while the GPU is rendering)
-	D3D12_CPU_DESCRIPTOR_HANDLE		mRenderTargetViews[cFrameCount];	///< The two render views corresponding to the render targets
+	ComPtr<ID3D12Resource>			mRenderTargets[cFrameCount];		///< Render targets (triple-buffered to decouple CPU from DWM VSync)
+	D3D12_CPU_DESCRIPTOR_HANDLE		mRenderTargetViews[cFrameCount];	///< Render target views corresponding to the render targets
 	ComPtr<ID3D12Resource>			mDepthStencilBuffer;				///< The main depth buffer
 	D3D12_CPU_DESCRIPTOR_HANDLE		mDepthStencilView { 0 };			///< A view for binding the depth buffer
-	ComPtr<ID3D12CommandAllocator>	mCommandAllocators[cFrameCount];	///< Two command allocator lists (one per frame)
+	ComPtr<ID3D12CommandAllocator>	mCommandAllocators[cFrameCount];	///< Command allocator lists (one per frame)
 	ComPtr<ID3D12CommandQueue>		mCommandQueue;						///< The command queue that will execute commands (there's only 1 since we want to finish rendering 1 frame before moving onto the next)
 	ComPtr<ID3D12GraphicsCommandList> mCommandList;						///< The command list
 	ComPtr<ID3D12RootSignature>		mRootSignature;						///< The root signature, we have a simple application so we only need 1, which is suitable for all our shaders
@@ -92,7 +101,7 @@ private:
 	// Synchronization objects used to finish rendering and swapping before reusing a command queue
 	HANDLE							mFenceEvent;						///< Fence event to wait for the previous frame rendering to complete (in order to free 1 of the buffers)
 	ComPtr<ID3D12Fence>				mFence;								///< Fence object, used to signal the end of a frame
-	UINT64							mFenceValues[cFrameCount] = {};		///< Values that were used to signal completion of one of the two frames
+	UINT64							mFenceValues[cFrameCount] = {};		///< Values that were used to signal completion of each in-flight frame
 
 	using ResourceCache = UnorderedMap<uint64, Array<ComPtr<ID3D12Resource>>>;
 
@@ -100,5 +109,8 @@ private:
 	ResourceCache					mDelayCached[cFrameCount];			///< List of reusable ID3D12Resources that are potentially referenced by the GPU so can be used only when the GPU finishes
 	Array<ComPtr<ID3D12Object>>		mDelayReleased[cFrameCount];		///< Objects that are potentially referenced by the GPU so can only be freed when the GPU finishes
 	bool							mIsExiting = false;					///< When exiting we don't want to add references too buffers
+	bool							mVSyncEnabled = true;				///< Whether VSync is active (controls Present sync interval + waitable wait)
 	bool							mTearingSupported = false;			///< Whether DXGI_PRESENT_ALLOW_TEARING is supported (required to truly disable VSync)
+	float							mPresentTimeMs = 0.0f;				///< Time spent in Present() call (ms)
+	float							mFenceWaitTimeMs = 0.0f;			///< Time spent waiting on GPU fence (ms)
 };

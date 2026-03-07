@@ -607,75 +607,124 @@ Week 45-48: Integration testing
 
 **Test Results: 574 total (101 base + 473 extended), 100% pass rate**
 
+### Phase 9: Engine Core Refactor (v1.0.0) ✅ COMPLETE
+
+```
+Audit → 10-pass refactor plan (REFACTOR_MASTER_PLAN.md)
+Unified math types, namespace normalization, directory restructure
+Engine class, public API layer, forward declarations
+PhysicsWorld subsystem wiring, rendering abstraction
+CMake overhaul, examples/docs/tests update
+```
+
+**Deliverables:**
+- [x] Unified math types — MathTypes.h (Vec2/3/4, Mat3/4, Quat), MathUtils.h (constants, lerp, clamp)
+- [x] Namespace normalization — all types in `WulfNet::` namespace, backward-compat aliases
+- [x] Directory restructure — Rendering/{Lighting,Effects,Types}, Compute/Pipelines, FluidSystem rename
+- [x] Engine class — single entry point (Engine.h/cpp), ordered init/shutdown, fixed-timestep frame loop
+- [x] EngineConfig — aggregate config struct with Full/Minimal/HeadlessPhysics presets, validation
+- [x] Version.h — WULFNET_VERSION_MAJOR/MINOR/PATCH/STRING, AT_LEAST macro
+- [x] API.h — WULFNET_API/WULFNET_INTERNAL/WULFNET_DEPRECATED macros for shared/static builds
+- [x] ForwardDecl.h — 130+ forward declarations for lightweight includes
+- [x] Logger static API — Logger::Initialize(), Logger::SetMinLevel(), Logger::GetMinLevel()
+- [x] PhysicsWorld wiring — owns FluidSystem, GaseousSystem, DestructionSystem, TerrainDeformation, MPMRigidCoupling; auto-init/shutdown/step
+- [x] IRenderer abstraction — interface with BeginFrame/Submit/EndFrame; RenderPipeline inherits
+- [x] RenderCommand — typed render commands with factory methods, RenderableList collection
+- [x] CMake overhaul — functional root CMakeLists.txt, install targets, find_package support, CMakePresets.json
+- [x] EngineDemo flagship example — full engine demo (physics + rendering + audio)
+- [x] Engine lifecycle integration tests — 22 new tests (version, config, lifecycle, frame loop)
+- [x] Updated docs — APIReference.md, ENGINE_PLAN.md, README.md
+
+**Test Results: 537 total (84 base + 453 extended), 100% pass rate**
+
 ---
 
 ## 8. Directory Structure
 
 ```
 wulfnet-engine/
-├── CMakeLists.txt              # Root CMake (builds Jolt + WulfNet)
+├── CMakeLists.txt              # Root CMake (builds Jolt + WulfNet + Tests + Examples)
+├── CMakePresets.json           # Build presets (MSVC, Clang, GCC, platforms)
 ├── README.md                   # Project overview
 ├── ENGINE_PLAN.md              # This document
+├── REFACTOR_MASTER_PLAN.md     # 10-pass refactor plan
 │
-├── Jolt/                       # Jolt Physics library (UPSTREAM - minimal changes)
-│   ├── AABBTree/
-│   ├── Core/
-│   ├── Geometry/
-│   ├── Math/
-│   ├── Physics/
-│   ├── Skeleton/
-│   └── ...
+├── Jolt/                       # Jolt Physics library (UPSTREAM - never modify)
 │
-├── JoltViewer/                 # Jolt's viewer (use for reference/testing)
-├── Samples/                    # Jolt's samples (use for reference)
-├── TestFramework/              # Jolt's test framework (rendering utilities)
+├── JoltViewer/                 # Jolt's viewer (reference/testing)
+├── Samples/                    # Jolt's samples (reference)
+├── TestFramework/              # Jolt's test framework
 ├── UnitTests/                  # Jolt's unit tests
 ├── PerformanceTest/            # Jolt's benchmarks
 ├── HelloWorld/                 # Simple Jolt example
 │
-├── WulfNet/                    # WulfNet Engine extensions
-│   ├── Core/                   # Extended utilities
-│   │   ├── Logging/            # Logging infrastructure
-│   │   ├── Profiling/          # Tracy integration
-│   │   └── Platform/           # Additional platform utilities
+├── WulfNet/                    # WulfNet Engine library
+│   ├── WulfNet.h               # Umbrella header
+│   ├── Engine.h / Engine.cpp   # Engine class (single entry point)
+│   ├── EngineConfig.h          # Aggregate config struct
+│   ├── Version.h               # Version macros
+│   ├── API.h                   # Export/import macros
+│   ├── ForwardDecl.h           # Forward declarations (130+ types)
+│   │
+│   ├── Core/                   # Core utilities
+│   │   ├── Logging/            # Logger, ILogSink, console/file/callback sinks
+│   │   ├── Profiling/          # Tracy integration, ScopedTimer, ManualTimer
+│   │   ├── System/             # SystemMonitor (CPU/RAM/GPU/VRAM)
+│   │   └── Math/               # MathTypes.h, MathUtils.h (unified Vec/Mat/Quat)
 │   │
 │   ├── Physics/                # Extended physics systems
-│   │   ├── Fluids/             # SPH, FLIP, APIC
-│   │   ├── MPM/                # Material Point Method
-│   │   ├── Gaseous/            # Smoke, fire, explosions
-│   │   ├── Destruction/        # Fracture physics
-│   │   ├── Terrain/            # Deformable terrain
-│   │   └── Integration/        # Jolt integration layer
+│   │   ├── Integration/        # PhysicsWorld (Jolt wrapper + subsystem owner)
+│   │   ├── Fluids/             # FluidSystem, FluidGrid, COFLIPSystem, FluidSurface
+│   │   ├── MPM/                # ConstitutiveModel, MPMRigidCoupling
+│   │   ├── Gaseous/            # GaseousSystem (smoke/fire/explosions)
+│   │   ├── Destruction/        # DestructionSystem (Voronoi fracture)
+│   │   └── Terrain/            # TerrainDeformation
 │   │
 │   ├── Compute/                # GPU compute infrastructure
-│   │   ├── Vulkan/             # Vulkan compute backend
-│   │   ├── Shaders/            # Compute shaders (HLSL)
-│   │   └── Memory/             # GPU memory management
+│   │   ├── Vulkan/             # VulkanContext (headless Vulkan 1.3)
+│   │   ├── Pipelines/          # ComputePipeline (SPIR-V, descriptors)
+│   │   ├── Memory/             # ComputeBuffer<T>
+│   │   ├── Reduction/          # ParallelReduction (GPU min/max/sum)
+│   │   └── Fluids/             # VulkanFluidCompute, SWEComputeGPU
 │   │
 │   ├── Rendering/              # Rendering pipeline
-│   │   ├── Backend/            # Vulkan abstraction
-│   │   ├── Pipeline/           # Render passes
-│   │   ├── Materials/          # PBR materials
-│   │   └── Effects/            # Volumetrics, post-process
+│   │   ├── IRenderer.h         # Abstract renderer interface
+│   │   ├── RenderCommand.h     # Typed render commands + RenderableList
+│   │   ├── RenderPipeline.h    # Unified pipeline orchestrator
+│   │   ├── SoftwareRasterizer/ # CPU rasterizer, GBuffer, DeferredShading
+│   │   ├── Lighting/           # ShadowMap, GlobalIllumination
+│   │   ├── Effects/            # VolumetricRenderer
+│   │   └── Types/              # RenderTypes.h
+│   │
+│   ├── Procedural/             # Procedural systems
+│   │   └── IFS/                # GPU fractal generation (chaos game)
 │   │
 │   └── Audio/                  # Audio & acoustics
-│       ├── Core/               # Mixer, sources
-│       ├── Acoustics/          # Ray-traced reverb
-│       └── Spatial/            # HRTF, Ambisonics
+│       ├── Core/               # AudioBuffer, AudioSource, AudioMixer
+│       ├── Acoustics/          # AcousticSystem (ray-traced reverb)
+│       └── Spatial/            # SpatialAudio (HRTF, Ambisonics, Doppler)
 │
-├── WulfNetViewer/              # Extended viewer application
-├── WulfNetTests/               # WulfNet-specific tests
+├── WulfNetTests/               # Test suites
+│   ├── WulfNetTests.cpp        # 84 core tests
+│   ├── WulfNetExtendedTests.cpp # 453 extended tests (19 suites)
+│   ├── EngineLifecycleTests.cpp # Engine lifecycle integration tests
+│   └── ...                     # Per-subsystem test files
+│
 ├── WulfNetExamples/            # Example applications
+│   ├── HelloWulfNet/           # Basic physics example
+│   ├── ComputeExample/         # GPU compute demonstration
+│   ├── IFSExample/             # GPU fractal visualization
+│   ├── SoftRasterExample/      # CPU rendering demonstration
+│   └── EngineDemo/             # Flagship: full engine lifecycle demo
 │
-├── Build/                      # Platform-specific build scripts
-├── Assets/                     # Shared assets
-│   ├── Shaders/                # Graphics & compute shaders
-│   ├── Fonts/
-│   └── Models/
+├── cmake/                      # CMake support files
+│   └── WulfNetConfig.cmake.in  # find_package(WulfNet) support
 │
+├── build/                      # Platform build scripts
+├── Assets/                     # Shared assets (shaders, fonts, models)
 └── docs/                       # Documentation
+    ├── APIReference.md          # Full API reference
     ├── Architecture.md
-    ├── APIReference.md
     └── Images/
 ```
 
@@ -791,7 +840,7 @@ git cherry-pick <commit-hash>
 
 ---
 
-*Document Version: 4.0*  
+*Document Version: 5.0*  
 *Created: February 2026*  
-*Last Updated: February 2026*  
-*WulfNet Engine Team*
+*Last Updated: March 2026*  
+*WulfNet Engine v1.0.0*

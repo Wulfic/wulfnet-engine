@@ -74,6 +74,15 @@ public:
     /// Download the full grid from GPU back to CPU.
     bool DownloadGrid(float* gridData, uint32_t cellCount);
 
+    /// Kick off an async GPU→CPU grid readback (non-blocking).
+    bool DownloadGridAsync();
+
+    /// Non-blocking check: has the last async readback completed?
+    bool IsReadbackReady() const;
+
+    /// Copy downloaded data into outData. Blocks if readback hasn't finished yet.
+    bool GetReadbackData(std::vector<float>& outData);
+
     // =========================================================================
     // Compute Dispatch — Single Full SWE Step
     // =========================================================================

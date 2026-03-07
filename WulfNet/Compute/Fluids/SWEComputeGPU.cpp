@@ -283,6 +283,21 @@ bool SWEComputeGPU::DownloadGrid(float* gridData, uint32_t cellCount) {
     return m_gridBuffer->Download(gridData, static_cast<size_t>(cellCount) * 4, 0);
 }
 
+bool SWEComputeGPU::DownloadGridAsync() {
+    if (!m_initialized || !m_gridBuffer) return false;
+    return m_gridBuffer->DownloadAsync();
+}
+
+bool SWEComputeGPU::IsReadbackReady() const {
+    if (!m_initialized || !m_gridBuffer) return false;
+    return m_gridBuffer->IsDownloadReady();
+}
+
+bool SWEComputeGPU::GetReadbackData(std::vector<float>& outData) {
+    if (!m_initialized || !m_gridBuffer) return false;
+    return m_gridBuffer->GetDownloadedData(outData);
+}
+
 // =============================================================================
 // Batched Dispatch — Record Commands
 // =============================================================================

@@ -273,17 +273,26 @@ void IFSSystem::DispatchChaosGame() {
     m_chaosGamePipeline.BindBuffer(0, m_particleBuffer);
     m_chaosGamePipeline.BindBuffer(1, m_transformBuffer);
 
-    for (uint32_t i = 0; i < m_config.chaosIterationsPerFrame; ++i) {
-        IFSChaosParams params;
-        params.seed = m_frameCount * 1000 + i * 137;
-        params.transformCount = m_transformCount;
-        params.batchIndex = static_cast<int32_t>(i);
-        params.particleCount = static_cast<int32_t>(m_particleCount);
+    // Batch all chaos iterations into a single command buffer with barriers.
+    // This eliminates N-1 vkQueueSubmit + vkQueueWaitIdle round-trips.
+    GetVulkanContext().SubmitAndWait([&](void* cmdBuffer) {
+        for (uint32_t i = 0; i < m_config.chaosIterationsPerFrame; ++i) {
+            if (i > 0) {
+                // Each iteration reads the output of the previous one — barrier required
+                ComputePipeline::RecordComputeBarrier(cmdBuffer);
+            }
 
-        m_chaosGamePipeline.SetPushConstants(params);
-        m_chaosGamePipeline.DispatchAndWait(
-            m_chaosGamePipeline.CalculateGroupCount(m_particleCount));
-    }
+            IFSChaosParams params;
+            params.seed = m_frameCount * 1000 + i * 137;
+            params.transformCount = m_transformCount;
+            params.batchIndex = static_cast<int32_t>(i);
+            params.particleCount = static_cast<int32_t>(m_particleCount);
+
+            m_chaosGamePipeline.SetPushConstants(params);
+            m_chaosGamePipeline.DispatchAsync(cmdBuffer,
+                m_chaosGamePipeline.CalculateGroupCount(m_particleCount));
+        }
+    });
 }
 
 void IFSSystem::DispatchLODPrediction() {
@@ -306,15 +315,12 @@ void IFSSystem::DispatchVoxelize() {
 
     uint32_t gridVolume = m_config.voxelGridSize * m_config.voxelGridSize * m_config.voxelGridSize;
 
-    // Clear voxel grid
+    // Pre-set buffer bindings and push constants
     IFSClearParams clearParams;
     clearParams.memoryOffset = 0;
     m_clearVoxelsPipeline.BindBuffer(0, m_voxelGrid);
     m_clearVoxelsPipeline.SetPushConstants(clearParams);
-    m_clearVoxelsPipeline.DispatchAndWait(
-        m_clearVoxelsPipeline.CalculateGroupCount(gridVolume));
 
-    // Voxelize particle positions
     IFSVoxelizeParams voxParams;
     voxParams.gridSize = m_config.voxelGridSize;
     voxParams.gridBounds = m_config.voxelGridBounds;
@@ -326,8 +332,17 @@ void IFSSystem::DispatchVoxelize() {
     m_voxelizePipeline.BindBuffer(2, m_finalTransformBuffer);
     m_voxelizePipeline.BindBuffer(3, m_voxelGrid);
     m_voxelizePipeline.SetPushConstants(voxParams);
-    m_voxelizePipeline.DispatchAndWait(
-        m_voxelizePipeline.CalculateGroupCount(m_particleCount));
+
+    // Batch clear + voxelize into single command buffer
+    GetVulkanContext().SubmitAndWait([&](void* cmdBuffer) {
+        m_clearVoxelsPipeline.DispatchAsync(cmdBuffer,
+            m_clearVoxelsPipeline.CalculateGroupCount(gridVolume));
+
+        ComputePipeline::RecordComputeBarrier(cmdBuffer);
+
+        m_voxelizePipeline.DispatchAsync(cmdBuffer,
+            m_voxelizePipeline.CalculateGroupCount(m_particleCount));
+    });
 }
 
 void IFSSystem::DispatchOcclusion() {
@@ -335,24 +350,29 @@ void IFSSystem::DispatchOcclusion() {
 
     uint32_t gridVolume = m_config.voxelGridSize * m_config.voxelGridSize * m_config.voxelGridSize;
 
-    // Clear occlusion grid
+    // Pre-set bindings and push constants
     IFSClearParams clearParams;
     clearParams.memoryOffset = 0;
     m_clearOcclusionPipeline.BindBuffer(0, m_occlusionGrid);
     m_clearOcclusionPipeline.SetPushConstants(clearParams);
-    m_clearOcclusionPipeline.DispatchAndWait(
-        m_clearOcclusionPipeline.CalculateGroupCount(gridVolume));
 
-    // Calculate ambient occlusion
     IFSOcclusionParams occParams;
     occParams.gridSize = m_config.voxelGridSize;
     occParams.memoryOffset = 0;
-
     m_calcOcclusionPipeline.BindBuffer(0, m_voxelGrid);
     m_calcOcclusionPipeline.BindBuffer(1, m_occlusionGrid);
     m_calcOcclusionPipeline.SetPushConstants(occParams);
-    m_calcOcclusionPipeline.DispatchAndWait(
-        m_calcOcclusionPipeline.CalculateGroupCount(gridVolume));
+
+    // Batch clear + calc occlusion into single command buffer
+    GetVulkanContext().SubmitAndWait([&](void* cmdBuffer) {
+        m_clearOcclusionPipeline.DispatchAsync(cmdBuffer,
+            m_clearOcclusionPipeline.CalculateGroupCount(gridVolume));
+
+        ComputePipeline::RecordComputeBarrier(cmdBuffer);
+
+        m_calcOcclusionPipeline.DispatchAsync(cmdBuffer,
+            m_calcOcclusionPipeline.CalculateGroupCount(gridVolume));
+    });
 }
 
 bool IFSSystem::DownloadParticles(std::vector<float>& positions) {
