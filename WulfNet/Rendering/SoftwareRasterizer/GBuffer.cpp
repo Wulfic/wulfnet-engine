@@ -49,7 +49,7 @@ bool GBuffer::Initialize(int width, int height) {
     return true;
 }
 
-void GBuffer::Clear(const SoftVec3& skyTop, const SoftVec3& skyBottom) {
+void GBuffer::Clear(const Vec3& skyTop, const Vec3& skyBottom) {
     int pixelCount = m_width * m_height;
 
     // Clear depth to max
@@ -64,7 +64,7 @@ void GBuffer::Clear(const SoftVec3& skyTop, const SoftVec3& skyBottom) {
         // AVX2 path: clear 8 pixels at a time
         for (int y = 0; y < m_height; ++y) {
             float t = static_cast<float>(y) / static_cast<float>(m_height);
-            SoftVec3 skyColor = SoftVec3::Lerp(skyTop, skyBottom, t);
+            Vec3 skyColor = Vec3::Lerp(skyTop, skyBottom, t);
             uint32_t packed = SoftColorRGBA8::FromFloat(skyColor.x, skyColor.y, skyColor.z).ToUint32();
 
             int rowStart = y * m_width;
@@ -85,7 +85,7 @@ void GBuffer::Clear(const SoftVec3& skyTop, const SoftVec3& skyBottom) {
         // SSE2 path: clear 4 pixels at a time
         for (int y = 0; y < m_height; ++y) {
             float t = static_cast<float>(y) / static_cast<float>(m_height);
-            SoftVec3 skyColor = SoftVec3::Lerp(skyTop, skyBottom, t);
+            Vec3 skyColor = Vec3::Lerp(skyTop, skyBottom, t);
             uint32_t packed = SoftColorRGBA8::FromFloat(skyColor.x, skyColor.y, skyColor.z).ToUint32();
 
             int rowStart = y * m_width;
@@ -105,7 +105,7 @@ void GBuffer::Clear(const SoftVec3& skyTop, const SoftVec3& skyBottom) {
     // Scalar fallback
     for (int y = 0; y < m_height; ++y) {
         float t = static_cast<float>(y) / static_cast<float>(m_height);
-        SoftVec3 skyColor = SoftVec3::Lerp(skyTop, skyBottom, t);
+        Vec3 skyColor = Vec3::Lerp(skyTop, skyBottom, t);
         uint32_t packed = SoftColorRGBA8::FromFloat(skyColor.x, skyColor.y, skyColor.z).ToUint32();
 
         int rowStart = y * m_width;

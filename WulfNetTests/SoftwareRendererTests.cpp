@@ -7,7 +7,7 @@
 
 #include "TestHarness.h"
 #include <WulfNet/WulfNet.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/SoftwareRasterizer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/DeferredShading.h>
@@ -109,15 +109,15 @@ void test_GBuffer_BufferPointers() {
 // =============================================================================
 
 void test_SoftVec3_Operations() {
-    SoftVec3 a = {1.0f, 2.0f, 3.0f};
-    SoftVec3 b = {4.0f, 5.0f, 6.0f};
+    Vec3 a = {1.0f, 2.0f, 3.0f};
+    Vec3 b = {4.0f, 5.0f, 6.0f};
 
-    SoftVec3 sum = a + b;
+    Vec3 sum = a + b;
     EXPECT_TRUE(std::abs(sum.x - 5.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(sum.y - 7.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(sum.z - 9.0f) < 1e-6f);
 
-    SoftVec3 diff = b - a;
+    Vec3 diff = b - a;
     EXPECT_TRUE(std::abs(diff.x - 3.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(diff.y - 3.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(diff.z - 3.0f) < 1e-6f);
@@ -125,7 +125,7 @@ void test_SoftVec3_Operations() {
     float dot = a.Dot(b);
     EXPECT_TRUE(std::abs(dot - 32.0f) < 1e-6f); // 1*4 + 2*5 + 3*6
 
-    SoftVec3 cross = a.Cross(b);
+    Vec3 cross = a.Cross(b);
     // (2*6-3*5, 3*4-1*6, 1*5-2*4) = (-3, 6, -3)
     EXPECT_TRUE(std::abs(cross.x - (-3.0f)) < 1e-6f);
     EXPECT_TRUE(std::abs(cross.y - 6.0f) < 1e-6f);
@@ -133,15 +133,15 @@ void test_SoftVec3_Operations() {
 }
 
 void test_SoftVec3_Normalize() {
-    SoftVec3 v = {3.0f, 0.0f, 0.0f};
-    SoftVec3 n = v.Normalized();
+    Vec3 v = {3.0f, 0.0f, 0.0f};
+    Vec3 n = v.Normalized();
     EXPECT_TRUE(std::abs(n.x - 1.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(n.y) < 1e-6f);
     EXPECT_TRUE(std::abs(n.z) < 1e-6f);
 
     // Zero vector should remain zero
-    SoftVec3 zero = {0.0f, 0.0f, 0.0f};
-    SoftVec3 nz = zero.Normalized();
+    Vec3 zero = {0.0f, 0.0f, 0.0f};
+    Vec3 nz = zero.Normalized();
     EXPECT_TRUE(std::abs(nz.x) < 1e-6f);
     EXPECT_TRUE(std::abs(nz.y) < 1e-6f);
     EXPECT_TRUE(std::abs(nz.z) < 1e-6f);

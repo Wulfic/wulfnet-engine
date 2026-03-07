@@ -196,7 +196,7 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
 
             // Unpack normal
             SoftColorRGBA8 packedNormal = gbuffer.GetNormal(x, y);
-            SoftVec3 normal = {
+            Vec3 normal = {
                 (packedNormal.r / 255.0f) * 2.0f - 1.0f,
                 (packedNormal.g / 255.0f) * 2.0f - 1.0f,
                 (packedNormal.b / 255.0f) * 2.0f - 1.0f
@@ -207,18 +207,18 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
             // Reconstruct view direction
             float ndcX = (2.0f * (x + 0.5f) / float(width) - 1.0f) * camera.aspectRatio;
             float ndcY = 1.0f - 2.0f * (y + 0.5f) / float(height);
-            SoftVec3 viewDir = (camera.forward * fovScale + camera.right * ndcX + camera.up * ndcY).Normalized();
-            SoftVec3 worldPos = camera.position + viewDir * depth;
+            Vec3 viewDir = (camera.forward * fovScale + camera.right * ndcX + camera.up * ndcY).Normalized();
+            Vec3 worldPos = camera.position + viewDir * depth;
 
             // Get albedo
             SoftColorRGBA8 albedoColor = gbuffer.GetColor(x, y);
-            SoftVec3 albedo = {albedoColor.r / 255.0f, albedoColor.g / 255.0f, albedoColor.b / 255.0f};
+            Vec3 albedo = {albedoColor.r / 255.0f, albedoColor.g / 255.0f, albedoColor.b / 255.0f};
 
-            SoftVec3 color = {};
+            Vec3 color = {};
 
             // --- Ambient + GI ---
             float upFactor = normal.y * 0.5f + 0.5f;
-            SoftVec3 ambient = SoftVec3::Lerp(m_config.shading.ambientGroundColor,
+            Vec3 ambient = Vec3::Lerp(m_config.shading.ambientGroundColor,
                                                 m_config.shading.ambientSkyColor, upFactor)
                                * m_config.shading.ambientIntensity;
 
@@ -228,18 +228,18 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
                 ao = m_gi.SampleAO(x, y);
             }
 
-            color = color + SoftVec3{albedo.x * ambient.x, albedo.y * ambient.y, albedo.z * ambient.z} * ao;
+            color = color + Vec3{albedo.x * ambient.x, albedo.y * ambient.y, albedo.z * ambient.z} * ao;
 
             // Add indirect lighting
             if (m_config.enableGI) {
-                SoftVec3 indirect = m_gi.SampleIndirect(x, y);
-                color = color + SoftVec3{
+                Vec3 indirect = m_gi.SampleIndirect(x, y);
+                color = color + Vec3{
                     albedo.x * indirect.x, albedo.y * indirect.y, albedo.z * indirect.z
                 };
             }
 
             // --- Directional (sun) light with shadow ---
-            SoftVec3 lightDir = m_config.shading.sunLight.direction.Normalized() * -1.0f;
+            Vec3 lightDir = m_config.shading.sunLight.direction.Normalized() * -1.0f;
             float NdotL = std::max(0.0f, normal.Dot(lightDir));
 
             float shadowFactor = 1.0f;
@@ -247,7 +247,7 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
                 shadowFactor = m_shadows.SampleDirectionalShadow(worldPos);
             }
 
-            SoftVec3 diffuse = {
+            Vec3 diffuse = {
                 albedo.x * m_config.shading.sunLight.color.x * NdotL * m_config.shading.sunLight.intensity * shadowFactor,
                 albedo.y * m_config.shading.sunLight.color.y * NdotL * m_config.shading.sunLight.intensity * shadowFactor,
                 albedo.z * m_config.shading.sunLight.color.z * NdotL * m_config.shading.sunLight.intensity * shadowFactor
@@ -255,7 +255,7 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
             color = color + diffuse;
 
             // Specular (Blinn-Phong) with shadow
-            SoftVec3 halfVec = (lightDir + viewDir * -1.0f).Normalized();
+            Vec3 halfVec = (lightDir + viewDir * -1.0f).Normalized();
             float NdotH = std::max(0.0f, normal.Dot(halfVec));
             float specular = std::pow(NdotH, 32.0f) * m_config.shading.specularIntensity * shadowFactor;
             color = color + m_config.shading.sunLight.color * specular;
@@ -263,11 +263,11 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
             // --- Point lights with shadow ---
             for (int i = 0; i < static_cast<int>(m_config.shading.pointLights.size()); ++i) {
                 const auto& light = m_config.shading.pointLights[i];
-                SoftVec3 toLight = light.position - worldPos;
+                Vec3 toLight = light.position - worldPos;
                 float dist = toLight.Length();
                 if (dist > light.range) continue;
 
-                SoftVec3 lightDirP = toLight / dist;
+                Vec3 lightDirP = toLight / dist;
                 float NdotLP = std::max(0.0f, normal.Dot(lightDirP));
                 float attenuation = 1.0f - RPClamp01(dist / light.range);
                 attenuation *= attenuation;
@@ -277,7 +277,7 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
                     pointShadow = m_shadows.SamplePointLightShadow(i, worldPos);
                 }
 
-                color = color + SoftVec3{
+                color = color + Vec3{
                     albedo.x * light.color.x * NdotLP * light.intensity * attenuation * pointShadow,
                     albedo.y * light.color.y * NdotLP * light.intensity * attenuation * pointShadow,
                     albedo.z * light.color.z * NdotLP * light.intensity * attenuation * pointShadow
@@ -287,12 +287,12 @@ void RenderPipeline::PassLighting(const SoftCamera& camera) {
             // --- Fresnel ---
             float fresnel = 1.0f - std::max(0.0f, normal.Dot(viewDir * -1.0f));
             fresnel = std::pow(fresnel, m_config.shading.fresnelPower);
-            color = SoftVec3::Lerp(color, m_config.shading.ambientSkyColor, fresnel * 0.3f);
+            color = Vec3::Lerp(color, m_config.shading.ambientSkyColor, fresnel * 0.3f);
 
             // --- Distance fog ---
             float fogFactor = RPClamp01((depth - m_config.shading.fogStart) /
                                          (m_config.shading.fogEnd - m_config.shading.fogStart));
-            color = SoftVec3::Lerp(color, m_config.shading.fogColor, fogFactor);
+            color = Vec3::Lerp(color, m_config.shading.fogColor, fogFactor);
 
             // Clamp and write
             color.x = RPClamp01(color.x);

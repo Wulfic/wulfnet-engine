@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h"
+#include "WulfNet/Rendering/Types/RenderTypes.h"
 #include <vector>
 #include <cstdint>
 
@@ -22,8 +22,8 @@ public:
     bool Initialize(int width, int height);
 
     /// Clear all buffers (sky gradient on color, zero normals, max depth)
-    void Clear(const SoftVec3& skyTop = {0.4f, 0.6f, 0.9f},
-               const SoftVec3& skyBottom = {0.8f, 0.85f, 0.95f});
+    void Clear(const Vec3& skyTop = {0.4f, 0.6f, 0.9f},
+               const Vec3& skyBottom = {0.8f, 0.85f, 0.95f});
 
     /// Access individual pixels
     void SetColor(int x, int y, SoftColorRGBA8 color);

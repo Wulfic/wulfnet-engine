@@ -5,8 +5,8 @@
 // =============================================================================
 
 #include "TestHarness.h"
-#include <WulfNet/Rendering/SoftwareRasterizer/ShadowMap.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Lighting/ShadowMap.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <cmath>
 #include <limits>
 
@@ -57,7 +57,7 @@ static void Test_ShadowCascade_ComputeLightMatrix() {
     EXPECT_NEAR(cascade.GetOrthoSize(), 20.0f, 0.001f);
 
     // Light forward should be normalized (0,-1,0)
-    SoftVec3 fwd = cascade.GetLightForward();
+    Vec3 fwd = cascade.GetLightForward();
     EXPECT_NEAR(fwd.Length(), 1.0f, 0.01f);
     EXPECT_NEAR(fwd.y, -1.0f, 0.01f);
 }
@@ -97,7 +97,7 @@ static void Test_ShadowCascade_SampleShadow_Lit() {
     cascade.ComputeLightMatrix({0, -1, 0}, {0, 10, 0}, 30.0f, 0.1f, 100.0f);
 
     // No occluders written — everything should be lit
-    SoftVec3 testPoint = {0.0f, 5.0f, 0.0f};
+    Vec3 testPoint = {0.0f, 5.0f, 0.0f};
     float shadow = cascade.SampleShadow(testPoint, 0.005f);
     EXPECT_NEAR(shadow, 1.0f, 0.01f);
 }
@@ -108,7 +108,7 @@ static void Test_ShadowCascade_SampleShadow_OutsideFrustum() {
     cascade.ComputeLightMatrix({0, -1, 0}, {0, 0, 0}, 10.0f, 0.1f, 50.0f);
 
     // Far outside the cascade's ortho box should return lit
-    SoftVec3 farAway = {500.0f, 0.0f, 500.0f};
+    Vec3 farAway = {500.0f, 0.0f, 500.0f};
     EXPECT_NEAR(cascade.SampleShadow(farAway, 0.005f), 1.0f, 0.01f);
 }
 
@@ -120,7 +120,7 @@ static void Test_ShadowCascade_WorldToLightNDC() {
     cascade.ComputeLightMatrix({0, -1, 0}, {0, 0, 0}, 10.0f, 0.1f, 50.0f);
 
     // The focus center (0,0,0) projected into light NDC should be near center
-    SoftVec3 ndc = cascade.WorldToLightNDC({0, 0, 0});
+    Vec3 ndc = cascade.WorldToLightNDC({0, 0, 0});
     EXPECT_NEAR(ndc.x, 0.0f, 0.5f);
     EXPECT_NEAR(ndc.y, 0.0f, 0.5f);
     // Depth should be between 0 and 1
@@ -211,7 +211,7 @@ static void Test_PointLightShadow_SampleLit() {
     shadow.SetLightPosition({0, 0, 0}, 20.0f);
 
     // No occluders — everything in range should be lit
-    SoftVec3 testPoint = {5, 0, 0};
+    Vec3 testPoint = {5, 0, 0};
     float result = shadow.SampleShadow(testPoint, 0.005f);
     EXPECT_NEAR(result, 1.0f, 0.01f);
 }
@@ -222,7 +222,7 @@ static void Test_PointLightShadow_SampleOutOfRange() {
     shadow.SetLightPosition({0, 0, 0}, 10.0f);
 
     // Point beyond range
-    SoftVec3 farPoint = {100, 0, 0};
+    Vec3 farPoint = {100, 0, 0};
     float result = shadow.SampleShadow(farPoint, 0.005f);
     EXPECT_NEAR(result, 1.0f, 0.01f); // Out of range = lit
 }
@@ -510,14 +510,14 @@ static void Test_ShadowCascade_DepthComparison() {
     // A point behind the occluder (deeper) should be in shadow
     // Manually check: the stored depth is 0.2, a fragment at depth 0.5 should fail
     // We need to construct a world pos that maps to NDC center with depth 0.5
-    SoftVec3 lightPos = cascade.GetLightPosition();
-    SoftVec3 lightFwd = cascade.GetLightForward();
+    Vec3 lightPos = cascade.GetLightPosition();
+    Vec3 lightFwd = cascade.GetLightForward();
     float nearC = cascade.GetNearClip();
     float farC = cascade.GetFarClip();
 
     // A point along light forward at normalized depth 0.5
     float worldDepth = nearC + 0.5f * (farC - nearC);
-    SoftVec3 shadowedPoint = lightPos + lightFwd * worldDepth;
+    Vec3 shadowedPoint = lightPos + lightFwd * worldDepth;
 
     float shadow = cascade.SampleShadow(shadowedPoint, 0.005f);
     EXPECT_NEAR(shadow, 0.0f, 0.01f); // Should be shadowed

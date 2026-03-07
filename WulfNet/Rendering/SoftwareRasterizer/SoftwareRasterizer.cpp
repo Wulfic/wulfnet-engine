@@ -36,13 +36,13 @@ int SoftwareRasterizer::AddTexture(const SoftTexture& texture) {
     return static_cast<int>(m_textures.size()) - 1;
 }
 
-void SoftwareRasterizer::Clear(const SoftVec3& skyTop, const SoftVec3& skyBottom) {
+void SoftwareRasterizer::Clear(const Vec3& skyTop, const Vec3& skyBottom) {
     m_gbuffer.Clear(skyTop, skyBottom);
 }
 
-SoftVec3 SoftwareRasterizer::TransformPoint(const SoftVec3& point, const SoftTransform& transform) const {
+Vec3 SoftwareRasterizer::TransformPoint(const Vec3& point, const SoftTransform& transform) const {
     // Apply scale
-    SoftVec3 p = {point.x * transform.scale.x, point.y * transform.scale.y, point.z * transform.scale.z};
+    Vec3 p = {point.x * transform.scale.x, point.y * transform.scale.y, point.z * transform.scale.z};
 
     // Apply rotation (simplified Euler YXZ)
     float yRad = transform.rotation.y * 3.14159265f / 180.0f;
@@ -54,7 +54,7 @@ SoftVec3 SoftwareRasterizer::TransformPoint(const SoftVec3& point, const SoftTra
     float cz = std::cos(zRad), sz = std::sin(zRad);
 
     // Rotation matrix YXZ
-    SoftVec3 r;
+    Vec3 r;
     r.x = (cy*cz + sy*sx*sz) * p.x + (-cy*sz + sy*sx*cz) * p.y + sy*cx * p.z;
     r.y = cx*sz * p.x + cx*cz * p.y + (-sx) * p.z;
     r.z = (-sy*cz + cy*sx*sz) * p.x + (sy*sz + cy*sx*cz) * p.y + cy*cx * p.z;
@@ -62,7 +62,7 @@ SoftVec3 SoftwareRasterizer::TransformPoint(const SoftVec3& point, const SoftTra
     return r + transform.position;
 }
 
-SoftVec3 SoftwareRasterizer::TransformNormal(const SoftVec3& normal, const SoftTransform& transform) const {
+Vec3 SoftwareRasterizer::TransformNormal(const Vec3& normal, const SoftTransform& transform) const {
     float yRad = transform.rotation.y * 3.14159265f / 180.0f;
     float xRad = transform.rotation.x * 3.14159265f / 180.0f;
     float zRad = transform.rotation.z * 3.14159265f / 180.0f;
@@ -71,7 +71,7 @@ SoftVec3 SoftwareRasterizer::TransformNormal(const SoftVec3& normal, const SoftT
     float cx = std::cos(xRad), sx = std::sin(xRad);
     float cz = std::cos(zRad), sz = std::sin(zRad);
 
-    SoftVec3 r;
+    Vec3 r;
     r.x = (cy*cz + sy*sx*sz) * normal.x + (-cy*sz + sy*sx*cz) * normal.y + sy*cx * normal.z;
     r.y = cx*sz * normal.x + cx*cz * normal.y + (-sx) * normal.z;
     r.z = (-sy*cz + cy*sx*sz) * normal.x + (sy*sz + cy*sx*cz) * normal.y + cy*cx * normal.z;
@@ -79,9 +79,9 @@ SoftVec3 SoftwareRasterizer::TransformNormal(const SoftVec3& normal, const SoftT
     return r.Normalized();
 }
 
-SoftVec3 SoftwareRasterizer::ProjectToScreen(const SoftVec3& worldPos, const SoftCamera& camera) const {
+Vec3 SoftwareRasterizer::ProjectToScreen(const Vec3& worldPos, const SoftCamera& camera) const {
     // View space
-    SoftVec3 rel = worldPos - camera.position;
+    Vec3 rel = worldPos - camera.position;
     float vx = rel.Dot(camera.right);
     float vy = rel.Dot(camera.up);
     float vz = rel.Dot(camera.forward);
@@ -130,13 +130,13 @@ void SoftwareRasterizer::RenderObjects(const SoftTransform* objects, int count,
             wv1.normal = TransformNormal(wv1.normal, obj);
             wv2.normal = TransformNormal(wv2.normal, obj);
 
-            SoftVec3 faceNormal = tri < mesh.faceNormals.size()
+            Vec3 faceNormal = tri < mesh.faceNormals.size()
                 ? TransformNormal(mesh.faceNormals[tri], obj)
                 : (wv1.position - wv0.position).Cross(wv2.position - wv0.position).Normalized();
 
             // Backface culling
             if (m_config.enableBackfaceCulling) {
-                SoftVec3 viewDir = (wv0.position - camera.position).Normalized();
+                Vec3 viewDir = (wv0.position - camera.position).Normalized();
                 if (faceNormal.Dot(viewDir) > 0.0f) continue;
             }
 
@@ -154,13 +154,13 @@ void SoftwareRasterizer::RenderObjects(const SoftTransform* objects, int count,
 }
 
 void SoftwareRasterizer::RasterizeTriangle(const SoftVertex& v0, const SoftVertex& v1,
-                                            const SoftVertex& v2, const SoftVec3& faceNormal,
+                                            const SoftVertex& v2, const Vec3& faceNormal,
                                             const SoftMaterial& material, const SoftCamera& camera,
                                             const SoftColorRGBA8& tint) {
     // Project to screen space
-    SoftVec3 s0 = ProjectToScreen(v0.position, camera);
-    SoftVec3 s1 = ProjectToScreen(v1.position, camera);
-    SoftVec3 s2 = ProjectToScreen(v2.position, camera);
+    Vec3 s0 = ProjectToScreen(v0.position, camera);
+    Vec3 s1 = ProjectToScreen(v1.position, camera);
+    Vec3 s2 = ProjectToScreen(v2.position, camera);
 
     // Skip triangles behind near plane
     if (s0.z <= camera.nearPlane && s1.z <= camera.nearPlane && s2.z <= camera.nearPlane)
@@ -232,7 +232,7 @@ void SoftwareRasterizer::RasterizeTriangle(const SoftVertex& v0, const SoftVerte
             float v = (w0 * v0.uv.y * invZ0 + w1 * v1.uv.y * invZ1 + w2 * v2.uv.y * invZ2) * depth;
 
             // Perspective-correct normal interpolation
-            SoftVec3 normal;
+            Vec3 normal;
             normal.x = (w0 * v0.normal.x * invZ0 + w1 * v1.normal.x * invZ1 + w2 * v2.normal.x * invZ2) * depth;
             normal.y = (w0 * v0.normal.y * invZ0 + w1 * v1.normal.y * invZ1 + w2 * v2.normal.y * invZ2) * depth;
             normal.z = (w0 * v0.normal.z * invZ0 + w1 * v1.normal.z * invZ1 + w2 * v2.normal.z * invZ2) * depth;

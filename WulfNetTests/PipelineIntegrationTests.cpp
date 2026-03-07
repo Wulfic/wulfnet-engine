@@ -9,7 +9,7 @@
 #include <WulfNet/WulfNet.h>
 #include <WulfNet/Procedural/IFS/AffineTransform.h>
 #include <WulfNet/Procedural/IFS/TransformPresets.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/SoftwareRasterizer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/DeferredShading.h>
@@ -18,10 +18,10 @@
 using namespace WulfNet;
 
 // =============================================================================
-// Helper: transform a point by a GPUMat4x4 (row-major)
+// Helper: transform a point by a Mat4 (row-major)
 // =============================================================================
 
-static Vec3 TransformPoint(const GPUMat4x4& m, const Vec3& p) {
+static Vec3 TransformPoint(const Mat4& m, const Vec3& p) {
     float x = m.At(0, 0) * p.x + m.At(0, 1) * p.y + m.At(0, 2) * p.z + m.At(0, 3);
     float y = m.At(1, 0) * p.x + m.At(1, 1) * p.y + m.At(1, 2) * p.z + m.At(1, 3);
     float z = m.At(2, 0) * p.x + m.At(2, 1) * p.y + m.At(2, 2) * p.z + m.At(2, 3);

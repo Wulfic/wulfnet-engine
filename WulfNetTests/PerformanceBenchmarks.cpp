@@ -22,12 +22,12 @@
 #include <WulfNet/Audio/Spatial/SpatialAudio.h>
 
 // Rendering
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/ShadowMap.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/GlobalIllumination.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/VolumetricRenderer.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/RenderPipeline.h>
+#include <WulfNet/Rendering/Lighting/ShadowMap.h>
+#include <WulfNet/Rendering/Lighting/GlobalIllumination.h>
+#include <WulfNet/Rendering/Effects/VolumetricRenderer.h>
+#include <WulfNet/Rendering/RenderPipeline.h>
 
 // Physics
 #include <WulfNet/Physics/MPM/ConstitutiveModel.h>
@@ -492,8 +492,8 @@ static void Bench_Volumetric_RayMarch() {
     sampler.sampleDensity = [](float, float, float) -> float { return 0.3f; };
     sampler.sampleTemperature = [](float, float, float) -> float { return 500.0f; };
 
-    SoftVec3 origin = {0, 0, 15};
-    SoftVec3 dir = {0, 0, -1};
+    Vec3 origin = {0, 0, 15};
+    Vec3 dir = {0, 0, -1};
 
     auto r = BENCHMARK_N("Volumetric_MarchRay_32steps", 5000, {
         auto sample = vol.MarchRay(origin, dir, 30.0f, sampler);

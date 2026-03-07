@@ -10,16 +10,16 @@
 #include <WulfNet/Procedural/IFS/AffineTransform.h>
 #include <WulfNet/Procedural/IFS/TransformPresets.h>
 #include <WulfNet/Procedural/IFS/TransformBlender.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/SoftwareRasterizer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/DeferredShading.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/OcclusionCuller.h>
 #include <WulfNet/Core/System/SystemMonitor.h>
 
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <WulfNet/Jolt/Physics/Body/BodyCreationSettings.h>
 
 #include <cmath>
 #include <vector>

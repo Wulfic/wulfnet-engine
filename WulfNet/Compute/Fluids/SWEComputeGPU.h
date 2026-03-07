@@ -12,7 +12,7 @@
 
 #include "WulfNet/Compute/Vulkan/VulkanContext.h"
 #include "WulfNet/Compute/Memory/ComputeBuffer.h"
-#include "WulfNet/Compute/Shaders/ComputePipeline.h"
+#include "WulfNet/Compute/Pipelines/ComputePipeline.h"
 #include <memory>
 #include <string>
 #include <cstdint>

@@ -14,11 +14,11 @@
 namespace WulfNet {
 
 struct AABox {
-    SoftVec3 min;
-    SoftVec3 max;
+    Vec3 min;
+    Vec3 max;
 
-    SoftVec3 Center() const { return (min + max) * 0.5f; }
-    SoftVec3 Extent() const { return (max - min) * 0.5f; }
+    Vec3 Center() const { return (min + max) * 0.5f; }
+    Vec3 Extent() const { return (max - min) * 0.5f; }
 };
 
 struct OcclusionCullerConfig {
@@ -51,7 +51,7 @@ public:
     int GetHeight() const { return m_config.height; }
 
 private:
-    SoftVec3 ProjectToScreen(const SoftVec3& worldPos, const SoftCamera& camera) const;
+    Vec3 ProjectToScreen(const Vec3& worldPos, const SoftCamera& camera) const;
 
     OcclusionCullerConfig m_config;
     SoftwareRasterizer m_rasterizer;

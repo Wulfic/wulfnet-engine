@@ -6,10 +6,10 @@
 #include "ConstitutiveModel.h"
 
 // Jolt includes
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Body/BodyInterface.h>
-#include <Jolt/Physics/Body/MotionType.h>
+#include <WulfNet/Jolt/Jolt.h>
+#include <WulfNet/Jolt/Physics/PhysicsSystem.h>
+#include <WulfNet/Jolt/Physics/Body/BodyInterface.h>
+#include <WulfNet/Jolt/Physics/Body/MotionType.h>
 
 #include <cmath>
 #include <algorithm>

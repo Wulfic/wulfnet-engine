@@ -10,7 +10,7 @@ include_directories(${APP_GLUE_DIR})
 set(PHYSICS_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../")
 
 # Make targets
-include(${PHYSICS_REPO_ROOT}/Jolt/Jolt.cmake)
+include(${PHYSICS_REPO_ROOT}/WulfNet/Jolt/Jolt.cmake)
 include(${PHYSICS_REPO_ROOT}/PerformanceTest/PerformanceTest.cmake)
 
 # Link shared native library

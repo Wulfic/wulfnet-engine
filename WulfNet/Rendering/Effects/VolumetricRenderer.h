@@ -34,14 +34,14 @@ namespace WulfNet {
 // =============================================================================
 
 struct VolumeRegion {
-    SoftVec3 boundsMin = {0, 0, 0};     ///< World-space AABB minimum
-    SoftVec3 boundsMax = {10, 10, 10};   ///< World-space AABB maximum
+    Vec3 boundsMin = {0, 0, 0};     ///< World-space AABB minimum
+    Vec3 boundsMax = {10, 10, 10};   ///< World-space AABB maximum
 };
 
 /// Color ramp keyframe for mapping temperature to emission color
 struct EmissionKeyframe {
     float temperature;     ///< Temperature threshold
-    SoftVec3 color;        ///< RGB emission color
+    Vec3 color;        ///< RGB emission color
     float intensity;       ///< Emission strength
 };
 
@@ -61,8 +61,8 @@ struct VolumetricConfig {
     };
 
     /// Light direction for in-scattering (usually sun direction)
-    SoftVec3 lightDirection = {0.0f, -1.0f, 0.5f};
-    SoftVec3 lightColor = {1.0f, 0.95f, 0.9f};
+    Vec3 lightDirection = {0.0f, -1.0f, 0.5f};
+    Vec3 lightColor = {1.0f, 0.95f, 0.9f};
     float lightIntensity = 1.0f;
 
     /// Henyey-Greenstein phase function asymmetry (0=isotropic, >0=forward scatter)
@@ -91,7 +91,7 @@ struct VolumeSampler {
 // =============================================================================
 
 struct VolumetricSample {
-    SoftVec3 color = {};          ///< Accumulated color (emission + in-scattering)
+    Vec3 color = {};          ///< Accumulated color (emission + in-scattering)
     float    transmittance = 1.0f; ///< Remaining transparency [0..1]
 };
 
@@ -119,16 +119,16 @@ public:
     const VolumetricSample* GetVolumetricBuffer() const { return m_volumeBuffer.data(); }
 
     /// Ray-march a single ray through a volume
-    VolumetricSample MarchRay(const SoftVec3& rayOrigin, const SoftVec3& rayDir,
+    VolumetricSample MarchRay(const Vec3& rayOrigin, const Vec3& rayDir,
                                float maxDist, const VolumeSampler& sampler) const;
 
     /// Compute ray-AABB intersection (returns tNear, tFar)
-    static bool RayAABBIntersect(const SoftVec3& origin, const SoftVec3& invDir,
-                                  const SoftVec3& boxMin, const SoftVec3& boxMax,
+    static bool RayAABBIntersect(const Vec3& origin, const Vec3& invDir,
+                                  const Vec3& boxMin, const Vec3& boxMax,
                                   float& tNear, float& tFar);
 
     /// Evaluate emission color from temperature
-    SoftVec3 EvaluateEmission(float temperature) const;
+    Vec3 EvaluateEmission(float temperature) const;
 
     /// Henyey-Greenstein phase function
     static float PhaseHG(float cosTheta, float g);
@@ -141,7 +141,7 @@ public:
 
 private:
     /// Reconstruct a ray direction from screen pixel
-    SoftVec3 PixelToRayDir(int x, int y, const SoftCamera& camera) const;
+    Vec3 PixelToRayDir(int x, int y, const SoftCamera& camera) const;
 
     int m_width = 0;
     int m_height = 0;

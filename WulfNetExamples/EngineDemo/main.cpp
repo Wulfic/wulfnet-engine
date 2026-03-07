@@ -23,11 +23,11 @@
 #include <WulfNet/Physics/Integration/PhysicsWorld.h>
 #include <WulfNet/Rendering/RenderPipeline.h>
 #include <WulfNet/Rendering/RenderCommand.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <WulfNet/Jolt/Physics/Body/BodyCreationSettings.h>
 
 #include <iostream>
 #include <fstream>

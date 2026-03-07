@@ -25,8 +25,8 @@
 #include <functional>
 
 // Jolt includes
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/Body/BodyID.h>
+#include <WulfNet/Jolt/Jolt.h>
+#include <WulfNet/Jolt/Physics/Body/BodyID.h>
 
 namespace JPH {
     class PhysicsSystem;

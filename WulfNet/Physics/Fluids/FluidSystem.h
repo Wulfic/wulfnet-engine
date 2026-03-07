@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Body/BodyID.h>
-#include <Jolt/Core/JobSystem.h>
+#include <WulfNet/Jolt/Jolt.h>
+#include <WulfNet/Jolt/Physics/PhysicsSystem.h>
+#include <WulfNet/Jolt/Physics/Body/BodyID.h>
+#include <WulfNet/Jolt/Core/JobSystem.h>
 #include <vector>
 #include <atomic>
 #include <mutex>

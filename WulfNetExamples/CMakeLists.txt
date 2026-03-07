@@ -177,4 +177,12 @@ endif()
 
 set_target_properties(EngineDemo PROPERTIES FOLDER "WulfNet/Examples")
 
+# =============================================================================
+# Samples - Interactive physics test/demo application (DX12/Vulkan/Metal)
+# Requires WulfNetFramework (graphics backend)
+# =============================================================================
+if (TEST_FRAMEWORK_AVAILABLE)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/Samples.cmake)
+endif()
+
 message(STATUS "WulfNet Examples configured")

@@ -17,15 +17,6 @@
 
 namespace WulfNet {
 
-// =============================================================================
-// Backward-compatible alias: GPUMat4x4 → Mat4
-// =============================================================================
-// [[deprecated("Use WulfNet::Mat4 instead")]]
-using GPUMat4x4 = Mat4;
-
-// Vec3 is now defined in Core/Math/MathTypes.h — no alias needed since the
-// name is the same and it's in the same WulfNet namespace.
-
 struct TransformInstructions {
     Vec3 scale = {1.0f, 1.0f, 1.0f};
     Vec3 shearX;

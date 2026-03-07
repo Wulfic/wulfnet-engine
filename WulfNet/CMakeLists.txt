@@ -111,9 +111,8 @@ set(WULFNET_HEADERS
     # Physics Integration
     Physics/Integration/PhysicsWorld.h
 
-    # Physics - Fluids (SWE 2.5D) [renamed from WaterSystemV3]
+    # Physics - Fluids (SWE 2.5D)
     Physics/Fluids/FluidSystem.h
-    Physics/WaterSystemV3.h       # Backward-compat redirect
 
     # Physics - MPM Constitutive Models
     Physics/MPM/ConstitutiveModel.h
@@ -133,7 +132,6 @@ set(WULFNET_HEADERS
     Compute/Vulkan/VulkanContext.h
     Compute/Memory/ComputeBuffer.h
     Compute/Pipelines/ComputePipeline.h
-    Compute/Shaders/ComputePipeline.h    # Backward-compat redirect
     Compute/Fluids/SWEComputeGPU.h
     Compute/Reduction/ParallelReduction.h
 
@@ -147,15 +145,10 @@ set(WULFNET_HEADERS
     Rendering/Types/RenderTypes.h
 
     # Rendering - Software Rasterizer (core)
-    Rendering/SoftwareRasterizer/SoftRasterTypes.h   # Backward-compat redirect
     Rendering/SoftwareRasterizer/GBuffer.h
     Rendering/SoftwareRasterizer/SoftwareRasterizer.h
     Rendering/SoftwareRasterizer/DeferredShading.h
     Rendering/SoftwareRasterizer/OcclusionCuller.h
-    Rendering/SoftwareRasterizer/ShadowMap.h          # Backward-compat redirect
-    Rendering/SoftwareRasterizer/GlobalIllumination.h # Backward-compat redirect
-    Rendering/SoftwareRasterizer/VolumetricRenderer.h # Backward-compat redirect
-    Rendering/SoftwareRasterizer/RenderPipeline.h     # Backward-compat redirect
 
     # Rendering - Lighting (new location)
     Rendering/Lighting/ShadowMap.h
@@ -194,8 +187,9 @@ target_compile_features(WulfNet PUBLIC cxx_std_17)
 # Include directories
 target_include_directories(WulfNet
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/..
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Link with Jolt

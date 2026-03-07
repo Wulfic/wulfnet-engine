@@ -13,10 +13,10 @@
 #include "../Terrain/TerrainDeformation.h"
 #include "../MPM/MPMRigidCoupling.h"
 
-#include <Jolt/RegisterTypes.h>
-#include <Jolt/Core/Factory.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <WulfNet/Jolt/RegisterTypes.h>
+#include <WulfNet/Jolt/Core/Factory.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/SphereShape.h>
 
 #include <thread>
 #include <cstdarg>

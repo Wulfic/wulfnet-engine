@@ -5,8 +5,8 @@
 // =============================================================================
 
 #include "TestHarness.h"
-#include <WulfNet/Rendering/SoftwareRasterizer/RenderPipeline.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/RenderPipeline.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <cmath>
 
 using namespace WulfNet;

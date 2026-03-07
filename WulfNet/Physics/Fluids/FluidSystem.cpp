@@ -2,9 +2,9 @@
 #include "WulfNet/Compute/Fluids/SWEComputeGPU.h"
 #include "WulfNet/Core/Logging/Logger.h"
 #include "WulfNet/Core/Profiling/Profiler.h"
-#include <Jolt/Physics/Body/BodyInterface.h>
-#include <Jolt/Physics/Collision/TransformedShape.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
+#include <WulfNet/Jolt/Physics/Body/BodyInterface.h>
+#include <WulfNet/Jolt/Physics/Collision/TransformedShape.h>
+#include <WulfNet/Jolt/Core/JobSystemThreadPool.h>
 #include <algorithm>
 #include <execution>
 #include <numeric>

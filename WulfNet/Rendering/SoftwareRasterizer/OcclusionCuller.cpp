@@ -26,8 +26,8 @@ void OcclusionCuller::RenderOccluders(const SoftTransform* occluders, int count,
     m_rasterizer.RenderObjects(occluders, count, camera);
 }
 
-SoftVec3 OcclusionCuller::ProjectToScreen(const SoftVec3& worldPos, const SoftCamera& camera) const {
-    SoftVec3 rel = worldPos - camera.position;
+Vec3 OcclusionCuller::ProjectToScreen(const Vec3& worldPos, const SoftCamera& camera) const {
+    Vec3 rel = worldPos - camera.position;
     float vx = rel.Dot(camera.right);
     float vy = rel.Dot(camera.up);
     float vz = rel.Dot(camera.forward);
@@ -48,7 +48,7 @@ SoftVec3 OcclusionCuller::ProjectToScreen(const SoftVec3& worldPos, const SoftCa
 
 bool OcclusionCuller::IsVisible(const AABox& worldBounds, const SoftCamera& camera) const {
     // Project all 8 corners of the AABB to screen space
-    SoftVec3 corners[8] = {
+    Vec3 corners[8] = {
         {worldBounds.min.x, worldBounds.min.y, worldBounds.min.z},
         {worldBounds.max.x, worldBounds.min.y, worldBounds.min.z},
         {worldBounds.min.x, worldBounds.max.y, worldBounds.min.z},
@@ -66,7 +66,7 @@ bool OcclusionCuller::IsVisible(const AABox& worldBounds, const SoftCamera& came
     bool anyInFront = false;
 
     for (int i = 0; i < 8; ++i) {
-        SoftVec3 projected = ProjectToScreen(corners[i], camera);
+        Vec3 projected = ProjectToScreen(corners[i], camera);
 
         if (projected.z > camera.nearPlane) {
             anyInFront = true;

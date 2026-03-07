@@ -48,16 +48,16 @@ struct IndirectLightConfig {
 
 /// Spherical Harmonic light probe (L1 = 4 coefficients per color channel)
 struct LightProbe {
-    SoftVec3 position;
+    Vec3 position;
     float    radius = 10.0f;       ///< Influence radius
 
     // L0 + L1 SH coefficients (4 per channel, 12 total)
-    SoftVec3 shCoeffs[4] = {};     ///< [0]=L0, [1-3]=L1 (x,y,z)
+    Vec3 shCoeffs[4] = {};     ///< [0]=L0, [1-3]=L1 (x,y,z)
 
     /// Evaluate SH irradiance for a given normal direction
-    SoftVec3 Evaluate(const SoftVec3& normal) const {
+    Vec3 Evaluate(const Vec3& normal) const {
         // L0: constant term
-        SoftVec3 color = shCoeffs[0] * 0.282095f;
+        Vec3 color = shCoeffs[0] * 0.282095f;
         // L1: directional terms
         color = color + shCoeffs[1] * (0.488603f * normal.y);
         color = color + shCoeffs[2] * (0.488603f * normal.z);
@@ -94,16 +94,16 @@ public:
     float* GetAOBuffer() { return m_aoBuffer.data(); }
 
     /// Get the indirect lighting buffer (RGB per pixel)
-    const SoftVec3* GetIndirectBuffer() const { return m_indirectBuffer.data(); }
+    const Vec3* GetIndirectBuffer() const { return m_indirectBuffer.data(); }
 
     /// Sample AO at a pixel
     float SampleAO(int x, int y) const;
 
     /// Sample indirect lighting at a pixel
-    SoftVec3 SampleIndirect(int x, int y) const;
+    Vec3 SampleIndirect(int x, int y) const;
 
     /// Evaluate light probe contribution at a world position with given normal
-    SoftVec3 EvaluateProbes(const SoftVec3& worldPos, const SoftVec3& normal) const;
+    Vec3 EvaluateProbes(const Vec3& worldPos, const Vec3& normal) const;
 
     /// Apply a box blur to the AO buffer for noise reduction
     void BlurAOBuffer();
@@ -123,19 +123,19 @@ private:
                            int x, int y) const;
 
     /// Compute indirect lighting for a single pixel
-    SoftVec3 ComputeIndirectPixel(const GBuffer& gbuffer, const SoftCamera& camera,
+    Vec3 ComputeIndirectPixel(const GBuffer& gbuffer, const SoftCamera& camera,
                                    int x, int y) const;
 
     /// Generate a pseudo-random sample direction in a hemisphere
-    SoftVec3 HemisphereSample(int sampleIndex, int totalSamples,
-                              const SoftVec3& normal) const;
+    Vec3 HemisphereSample(int sampleIndex, int totalSamples,
+                              const Vec3& normal) const;
 
     /// Reconstruct world position from screen coords + depth
-    SoftVec3 ReconstructWorldPos(int x, int y, float depth,
+    Vec3 ReconstructWorldPos(int x, int y, float depth,
                                  const SoftCamera& camera) const;
 
     /// Unpack normal from GBuffer
-    SoftVec3 UnpackNormal(SoftColorRGBA8 packed) const;
+    Vec3 UnpackNormal(SoftColorRGBA8 packed) const;
 
     int m_width = 0;
     int m_height = 0;
@@ -143,7 +143,7 @@ private:
     GlobalIlluminationConfig m_config;
 
     std::vector<float> m_aoBuffer;         ///< AO per pixel [0..1]
-    std::vector<SoftVec3> m_indirectBuffer; ///< Indirect lighting color per pixel
+    std::vector<Vec3> m_indirectBuffer; ///< Indirect lighting color per pixel
     std::vector<float> m_aoTempBuffer;     ///< Temporary buffer for blur
 };
 

@@ -58,6 +58,13 @@ option(USE_F16C                "Enable F16C"                  ON)
 option(USE_FMADD               "Enable FMADD"                 ON)
 option(ENABLE_ALL_WARNINGS     "Enable all warnings"          ON)
 
+# GPU / Compute backend options
+option(JPH_USE_DX12            "Use DirectX 12 compute"       ON)
+option(JPH_USE_DXC             "Use DXC shader compiler"      ON)
+option(JPH_USE_VK              "Use Vulkan compute"            ON)
+option(JPH_USE_MTL             "Use Metal compute"             ON)
+option(JPH_USE_CPU_COMPUTE     "Use CPU fallback compute"      ON)
+
 set(PHYSICS_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/)
 
 # -----------------------------------------------------------------------------
@@ -100,10 +107,10 @@ endfunction()
 SET_INTERPROCEDURAL_OPTIMIZATION()
 
 # =============================================================================
-# Jolt Physics (built from source, lives in Jolt/ subdirectory)
+# Jolt Physics (built from source, lives in WulfNet/Jolt/ subdirectory)
 # =============================================================================
 message(STATUS "Building Jolt Physics from source...")
-include(${PHYSICS_REPO_ROOT}/Jolt/Jolt.cmake)
+include(${PHYSICS_REPO_ROOT}/WulfNet/Jolt/Jolt.cmake)
 
 if(XCODE)
     set_property(TARGET Jolt PROPERTY XCODE_ATTRIBUTE_OTHER_CPLUSPLUSFLAGS[arch=x86_64] "$(inherited) -msse4.2 -mpopcnt")
@@ -114,6 +121,12 @@ endif()
 # =============================================================================
 message(STATUS "Configuring WulfNet Engine...")
 add_subdirectory(WulfNet)
+
+# =============================================================================
+# WulfNet Application Framework (DX12/Vulkan/Metal rendering, UI, windowing)
+# =============================================================================
+message(STATUS "Configuring WulfNet Framework...")
+include(${PHYSICS_REPO_ROOT}/WulfNet/Framework/Framework.cmake)
 
 # =============================================================================
 # WulfNet Tests
@@ -150,9 +163,9 @@ install(DIRECTORY WulfNet/
     FILES_MATCHING PATTERN "*.h"
 )
 
-# Install Jolt headers
-install(DIRECTORY Jolt/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Jolt
+# Install Jolt headers (from WulfNet/Jolt/)
+install(DIRECTORY WulfNet/Jolt/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/WulfNet/Jolt
     FILES_MATCHING PATTERN "*.h" PATTERN "*.inl"
 )
 

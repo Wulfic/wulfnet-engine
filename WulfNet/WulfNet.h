@@ -42,10 +42,8 @@
 
 #include "Physics/Integration/PhysicsWorld.h"
 
-// Physics - Fluids (SWE 2.5D) [renamed from WaterSystemV3]
+// Physics - Fluids (SWE 2.5D)
 #include "Physics/Fluids/FluidSystem.h"
-// Backward-compat redirect (provides WulfNet::Physics:: aliases)
-#include "Physics/WaterSystemV3.h"
 
 // Physics - Material Point Method
 #include "Physics/MPM/ConstitutiveModel.h"

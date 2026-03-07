@@ -44,7 +44,7 @@
 #include "Memory/ComputeBuffer.h"
 
 // Compute pipelines
-#include "Shaders/ComputePipeline.h"
+#include "Pipelines/ComputePipeline.h"
 
 // Parallel reduction
 #include "Reduction/ParallelReduction.h"

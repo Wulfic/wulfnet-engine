@@ -42,7 +42,7 @@ bool GlobalIllumination::Initialize(int width, int height, const GlobalIlluminat
     int pixelCount = width * height;
     m_aoBuffer.resize(pixelCount, 1.0f);
     m_aoTempBuffer.resize(pixelCount, 1.0f);
-    m_indirectBuffer.resize(pixelCount, SoftVec3{0, 0, 0});
+    m_indirectBuffer.resize(pixelCount, Vec3{0, 0, 0});
 
     return true;
 }
@@ -92,16 +92,16 @@ float GlobalIllumination::SampleAO(int x, int y) const {
     return m_aoBuffer[y * m_width + x];
 }
 
-SoftVec3 GlobalIllumination::SampleIndirect(int x, int y) const {
+Vec3 GlobalIllumination::SampleIndirect(int x, int y) const {
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) return {};
     return m_indirectBuffer[y * m_width + x];
 }
 
-SoftVec3 GlobalIllumination::EvaluateProbes(const SoftVec3& worldPos, const SoftVec3& normal) const {
-    SoftVec3 result = {};
+Vec3 GlobalIllumination::EvaluateProbes(const Vec3& worldPos, const Vec3& normal) const {
+    Vec3 result = {};
 
     for (const auto& probe : m_config.probes) {
-        SoftVec3 toProbe = probe.position - worldPos;
+        Vec3 toProbe = probe.position - worldPos;
         float dist = toProbe.Length();
 
         if (dist > probe.radius) continue;
@@ -110,7 +110,7 @@ SoftVec3 GlobalIllumination::EvaluateProbes(const SoftVec3& worldPos, const Soft
         float t = dist / probe.radius;
         float weight = (1.0f - t) * (1.0f - t);
 
-        SoftVec3 irradiance = probe.Evaluate(normal);
+        Vec3 irradiance = probe.Evaluate(normal);
         result = result + irradiance * weight;
     }
 
@@ -155,8 +155,8 @@ void GlobalIllumination::AddProbe(const LightProbe& probe) {
 // Private methods
 // =============================================================================
 
-SoftVec3 GlobalIllumination::UnpackNormal(SoftColorRGBA8 packed) const {
-    SoftVec3 n = {
+Vec3 GlobalIllumination::UnpackNormal(SoftColorRGBA8 packed) const {
+    Vec3 n = {
         (packed.r / 255.0f) * 2.0f - 1.0f,
         (packed.g / 255.0f) * 2.0f - 1.0f,
         (packed.b / 255.0f) * 2.0f - 1.0f
@@ -166,37 +166,37 @@ SoftVec3 GlobalIllumination::UnpackNormal(SoftColorRGBA8 packed) const {
     return n;
 }
 
-SoftVec3 GlobalIllumination::ReconstructWorldPos(int x, int y, float depth,
+Vec3 GlobalIllumination::ReconstructWorldPos(int x, int y, float depth,
                                                   const SoftCamera& camera) const {
     float fovScale = 1.0f / std::tan(camera.fov * 0.5f * kGIPi / 180.0f);
     float ndcX = (2.0f * (x + 0.5f) / static_cast<float>(m_width) - 1.0f) * camera.aspectRatio;
     float ndcY = 1.0f - 2.0f * (y + 0.5f) / static_cast<float>(m_height);
-    SoftVec3 viewDir = (camera.forward * fovScale + camera.right * ndcX + camera.up * ndcY).Normalized();
+    Vec3 viewDir = (camera.forward * fovScale + camera.right * ndcX + camera.up * ndcY).Normalized();
     return camera.position + viewDir * depth;
 }
 
-SoftVec3 GlobalIllumination::HemisphereSample(int sampleIndex, int totalSamples,
-                                                const SoftVec3& normal) const {
+Vec3 GlobalIllumination::HemisphereSample(int sampleIndex, int totalSamples,
+                                                const Vec3& normal) const {
     // Fibonacci hemisphere sampling (deterministic, uniform distribution)
     float goldenRatio = (1.0f + std::sqrt(5.0f)) * 0.5f;
     float theta = 2.0f * kGIPi * sampleIndex / goldenRatio;
     float cosTheta = 1.0f - (static_cast<float>(sampleIndex) + 0.5f) / static_cast<float>(totalSamples);
     float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
 
-    SoftVec3 sample = {
+    Vec3 sample = {
         sinTheta * std::cos(theta),
         sinTheta * std::sin(theta),
         cosTheta
     };
 
     // Orient to hemisphere around normal using Gram-Schmidt
-    SoftVec3 tangent;
+    Vec3 tangent;
     if (std::abs(normal.x) < 0.9f)
-        tangent = SoftVec3{1, 0, 0}.Cross(normal).Normalized();
+        tangent = Vec3{1, 0, 0}.Cross(normal).Normalized();
     else
-        tangent = SoftVec3{0, 1, 0}.Cross(normal).Normalized();
+        tangent = Vec3{0, 1, 0}.Cross(normal).Normalized();
 
-    SoftVec3 bitangent = normal.Cross(tangent);
+    Vec3 bitangent = normal.Cross(tangent);
 
     return (tangent * sample.x + bitangent * sample.y + normal * sample.z).Normalized();
 }
@@ -205,8 +205,8 @@ float GlobalIllumination::ComputeSSAOPixel(const GBuffer& gbuffer, const SoftCam
                                             int x, int y) const {
     float depth = gbuffer.GetDepth(x, y);
     SoftColorRGBA8 packedN = gbuffer.GetNormal(x, y);
-    SoftVec3 normal = UnpackNormal(packedN);
-    SoftVec3 worldPos = ReconstructWorldPos(x, y, depth, camera);
+    Vec3 normal = UnpackNormal(packedN);
+    Vec3 worldPos = ReconstructWorldPos(x, y, depth, camera);
 
     float fovScale = 1.0f / std::tan(camera.fov * 0.5f * kGIPi / 180.0f);
 
@@ -215,13 +215,13 @@ float GlobalIllumination::ComputeSSAOPixel(const GBuffer& gbuffer, const SoftCam
 
     for (int s = 0; s < sampleCount; ++s) {
         // Get sample direction in hemisphere around normal
-        SoftVec3 sampleDir = HemisphereSample(s, sampleCount, normal);
+        Vec3 sampleDir = HemisphereSample(s, sampleCount, normal);
 
         // Add per-pixel randomization using hash
         float randRotation = HashFloat(x, y, s) * 2.0f * kGIPi;
         float c = std::cos(randRotation);
         float sn = std::sin(randRotation);
-        SoftVec3 rotated = {
+        Vec3 rotated = {
             sampleDir.x * c - sampleDir.y * sn,
             sampleDir.x * sn + sampleDir.y * c,
             sampleDir.z
@@ -233,10 +233,10 @@ float GlobalIllumination::ComputeSSAOPixel(const GBuffer& gbuffer, const SoftCam
         float scale = (static_cast<float>(s) + 1.0f) / static_cast<float>(sampleCount);
         scale = 0.1f + scale * scale * 0.9f; // Accelerating distribution
 
-        SoftVec3 samplePos = worldPos + rotated * (m_config.ssao.radius * scale);
+        Vec3 samplePos = worldPos + rotated * (m_config.ssao.radius * scale);
 
         // Project sample to screen
-        SoftVec3 toSample = samplePos - camera.position;
+        Vec3 toSample = samplePos - camera.position;
         float sampleDepth = toSample.Dot(camera.forward);
         if (sampleDepth <= 0.0f) continue;
 
@@ -265,37 +265,37 @@ float GlobalIllumination::ComputeSSAOPixel(const GBuffer& gbuffer, const SoftCam
     return ao;
 }
 
-SoftVec3 GlobalIllumination::ComputeIndirectPixel(const GBuffer& gbuffer, const SoftCamera& camera,
+Vec3 GlobalIllumination::ComputeIndirectPixel(const GBuffer& gbuffer, const SoftCamera& camera,
                                                     int x, int y) const {
     float depth = gbuffer.GetDepth(x, y);
     SoftColorRGBA8 packedN = gbuffer.GetNormal(x, y);
-    SoftVec3 normal = UnpackNormal(packedN);
-    SoftVec3 worldPos = ReconstructWorldPos(x, y, depth, camera);
+    Vec3 normal = UnpackNormal(packedN);
+    Vec3 worldPos = ReconstructWorldPos(x, y, depth, camera);
 
     float fovScale = 1.0f / std::tan(camera.fov * 0.5f * kGIPi / 180.0f);
 
-    SoftVec3 indirectColor = {};
+    Vec3 indirectColor = {};
     int sampleCount = m_config.indirect.sampleCount;
     int validSamples = 0;
 
     for (int s = 0; s < sampleCount; ++s) {
-        SoftVec3 sampleDir = HemisphereSample(s, sampleCount, normal);
+        Vec3 sampleDir = HemisphereSample(s, sampleCount, normal);
 
         // Randomize per-pixel
         float angle = HashFloat(x, y, s + 1000) * 2.0f * kGIPi;
         float c = std::cos(angle);
         float sn = std::sin(angle);
-        SoftVec3 rotated = {
+        Vec3 rotated = {
             sampleDir.x * c - sampleDir.y * sn,
             sampleDir.x * sn + sampleDir.y * c,
             sampleDir.z
         };
         if (rotated.Dot(normal) < 0.0f) rotated = rotated * -1.0f;
 
-        SoftVec3 samplePos = worldPos + rotated * m_config.indirect.bounceRadius;
+        Vec3 samplePos = worldPos + rotated * m_config.indirect.bounceRadius;
 
         // Project to screen
-        SoftVec3 toSample = samplePos - camera.position;
+        Vec3 toSample = samplePos - camera.position;
         float sampleDepth = toSample.Dot(camera.forward);
         if (sampleDepth <= 0.0f) continue;
 
@@ -314,7 +314,7 @@ SoftVec3 GlobalIllumination::ComputeIndirectPixel(const GBuffer& gbuffer, const 
         // (rotated is already in our normal's hemisphere, so dot >= 0)
         float weight = std::max(0.0f, normal.Dot(rotated));
 
-        indirectColor = indirectColor + SoftVec3{
+        indirectColor = indirectColor + Vec3{
             neighborColor.r / 255.0f * weight,
             neighborColor.g / 255.0f * weight,
             neighborColor.b / 255.0f * weight
@@ -328,7 +328,7 @@ SoftVec3 GlobalIllumination::ComputeIndirectPixel(const GBuffer& gbuffer, const 
 
     // Add light probe contribution
     if (m_config.probesEnabled && !m_config.probes.empty()) {
-        SoftVec3 probeContrib = EvaluateProbes(worldPos, normal);
+        Vec3 probeContrib = EvaluateProbes(worldPos, normal);
         indirectColor = indirectColor + probeContrib;
     }
 

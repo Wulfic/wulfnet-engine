@@ -5,9 +5,9 @@
 // =============================================================================
 
 #include "TestHarness.h"
-#include <WulfNet/Rendering/SoftwareRasterizer/GlobalIllumination.h>
+#include <WulfNet/Rendering/Lighting/GlobalIllumination.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <cmath>
 
 using namespace WulfNet;
@@ -23,7 +23,7 @@ static GBuffer CreateTestGBuffer(int w, int h) {
 }
 
 static void FillGBufferRegion(GBuffer& gb, int x0, int y0, int x1, int y1,
-                               SoftColorRGBA8 color, SoftVec3 normal, float depth) {
+                               SoftColorRGBA8 color, Vec3 normal, float depth) {
     // Pack normal
     SoftColorRGBA8 packedN;
     packedN.r = static_cast<uint8_t>((normal.x * 0.5f + 0.5f) * 255.0f);
@@ -240,7 +240,7 @@ static void Test_GI_IndirectLighting_SkyReturnZero() {
 
     gi.Compute(gb, cam);
 
-    SoftVec3 ind = gi.SampleIndirect(16, 16);
+    Vec3 ind = gi.SampleIndirect(16, 16);
     EXPECT_NEAR(ind.x, 0.0f, 0.01f);
     EXPECT_NEAR(ind.y, 0.0f, 0.01f);
     EXPECT_NEAR(ind.z, 0.0f, 0.01f);
@@ -258,7 +258,7 @@ static void Test_GI_IndirectLighting_Disabled() {
 
     gi.Compute(gb, cam);
 
-    SoftVec3 ind = gi.SampleIndirect(16, 16);
+    Vec3 ind = gi.SampleIndirect(16, 16);
     EXPECT_NEAR(ind.x, 0.0f, 0.01f);
     EXPECT_NEAR(ind.y, 0.0f, 0.01f);
     EXPECT_NEAR(ind.z, 0.0f, 0.01f);
@@ -268,7 +268,7 @@ static void Test_GI_IndirectLighting_BoundsCheck() {
     GlobalIllumination gi;
     gi.Initialize(16, 16);
 
-    SoftVec3 oob = gi.SampleIndirect(-1, -1);
+    Vec3 oob = gi.SampleIndirect(-1, -1);
     EXPECT_NEAR(oob.x, 0.0f, 0.01f);
     EXPECT_NEAR(oob.y, 0.0f, 0.01f);
     EXPECT_NEAR(oob.z, 0.0f, 0.01f);
@@ -292,7 +292,7 @@ static void Test_GI_IndirectLighting_WithGeometry() {
     gi.Compute(gb, cam);
 
     // The indirect buffer should have non-zero values
-    const SoftVec3* indirect = gi.GetIndirectBuffer();
+    const Vec3* indirect = gi.GetIndirectBuffer();
     bool hasIndirect = false;
     for (int i = 0; i < 64 * 64; ++i) {
         if (indirect[i].x > 0.001f || indirect[i].y > 0.001f || indirect[i].z > 0.001f) {
@@ -319,7 +319,7 @@ static void Test_GI_LightProbe_Evaluate() {
     probe.shCoeffs[2] = {};
     probe.shCoeffs[3] = {};
 
-    SoftVec3 irr = probe.Evaluate({0, 1, 0});
+    Vec3 irr = probe.Evaluate({0, 1, 0});
     // L0 scaled by 0.282095
     EXPECT_NEAR(irr.x, 0.282095f, 0.01f);
     EXPECT_NEAR(irr.y, 0.282095f, 0.01f);
@@ -336,9 +336,9 @@ static void Test_GI_LightProbe_DirectionalSH() {
     probe.shCoeffs[1] = {1.0f, 1.0f, 1.0f}; // Y direction
 
     // Normal pointing up should get more light
-    SoftVec3 upIrr = probe.Evaluate({0, 1, 0});
+    Vec3 upIrr = probe.Evaluate({0, 1, 0});
     // Normal pointing down should get less
-    SoftVec3 downIrr = probe.Evaluate({0, -1, 0});
+    Vec3 downIrr = probe.Evaluate({0, -1, 0});
 
     EXPECT_GT(upIrr.x, downIrr.x);
 }
@@ -371,7 +371,7 @@ static void Test_GI_EvaluateProbes_InRange() {
     gi.Initialize(32, 32, config);
 
     // Point inside the probe radius
-    SoftVec3 result = gi.EvaluateProbes({2, 0, 0}, {0, 1, 0});
+    Vec3 result = gi.EvaluateProbes({2, 0, 0}, {0, 1, 0});
     EXPECT_GT(result.x, 0.0f);
     EXPECT_GT(result.y, 0.0f);
     EXPECT_GT(result.z, 0.0f);
@@ -388,7 +388,7 @@ static void Test_GI_EvaluateProbes_OutOfRange() {
     gi.Initialize(32, 32, config);
 
     // Point outside the probe radius
-    SoftVec3 result = gi.EvaluateProbes({100, 0, 0}, {0, 1, 0});
+    Vec3 result = gi.EvaluateProbes({100, 0, 0}, {0, 1, 0});
     EXPECT_NEAR(result.x, 0.0f, 0.01f);
     EXPECT_NEAR(result.y, 0.0f, 0.01f);
     EXPECT_NEAR(result.z, 0.0f, 0.01f);
@@ -405,8 +405,8 @@ static void Test_GI_EvaluateProbes_Falloff() {
     gi.Initialize(32, 32, config);
 
     // Close to probe should have more contribution
-    SoftVec3 close = gi.EvaluateProbes({1, 0, 0}, {0, 1, 0});
-    SoftVec3 far   = gi.EvaluateProbes({8, 0, 0}, {0, 1, 0});
+    Vec3 close = gi.EvaluateProbes({1, 0, 0}, {0, 1, 0});
+    Vec3 far   = gi.EvaluateProbes({8, 0, 0}, {0, 1, 0});
 
     EXPECT_GT(close.x, far.x); // Closer = more light
 }

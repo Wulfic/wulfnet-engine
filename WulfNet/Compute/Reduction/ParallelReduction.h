@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "WulfNet/Compute/Shaders/ComputePipeline.h"
+#include "WulfNet/Compute/Pipelines/ComputePipeline.h"
 #include "WulfNet/Compute/Memory/ComputeBuffer.h"
 
 namespace WulfNet {

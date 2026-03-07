@@ -19,16 +19,6 @@
 namespace WulfNet {
 
 // =============================================================================
-// Backward-compatible aliases: SoftVec2/3/4 → Vec2/3/4
-// =============================================================================
-// These aliases allow existing rendering code to compile unchanged.
-// New code should use Vec2/Vec3/Vec4 directly.
-
-using SoftVec2 = Vec2;
-using SoftVec3 = Vec3;
-using SoftVec4 = Vec4;
-
-// =============================================================================
 // Color Types
 // =============================================================================
 
@@ -58,9 +48,9 @@ struct SoftColorRGBA8 {
 // =============================================================================
 
 struct SoftVertex {
-    SoftVec3 position;
-    SoftVec3 normal;
-    SoftVec2 uv;
+    Vec3 position;
+    Vec3 normal;
+    Vec2 uv;
 };
 
 struct SoftMaterial {
@@ -73,7 +63,7 @@ struct SoftMaterial {
 struct SoftMesh {
     std::vector<SoftVertex> vertices;
     std::vector<uint32_t> indices;
-    std::vector<SoftVec3> faceNormals;  // Pre-computed per-triangle normals
+    std::vector<Vec3> faceNormals;  // Pre-computed per-triangle normals
     SoftMaterial material;
     std::string name;
 
@@ -94,18 +84,18 @@ struct SoftMesh {
 // =============================================================================
 
 struct SoftTransform {
-    SoftVec3 position;
-    SoftVec3 rotation;      // Euler angles in degrees
-    SoftVec3 scale = {1.0f, 1.0f, 1.0f};
+    Vec3 position;
+    Vec3 rotation;      // Euler angles in degrees
+    Vec3 scale = {1.0f, 1.0f, 1.0f};
     int meshIndex = 0;
     SoftColorRGBA8 tint = {255, 255, 255, 255};
 };
 
 struct SoftCamera {
-    SoftVec3 position;
-    SoftVec3 forward = {0.0f, 0.0f, 1.0f};
-    SoftVec3 up = {0.0f, 1.0f, 0.0f};
-    SoftVec3 right = {1.0f, 0.0f, 0.0f};
+    Vec3 position;
+    Vec3 forward = {0.0f, 0.0f, 1.0f};
+    Vec3 up = {0.0f, 1.0f, 0.0f};
+    Vec3 right = {1.0f, 0.0f, 0.0f};
     float fov = 60.0f;
     float nearPlane = 0.1f;
     float farPlane = 1000.0f;
@@ -113,15 +103,15 @@ struct SoftCamera {
 };
 
 struct SoftPointLight {
-    SoftVec3 position;
-    SoftVec3 color = {1.0f, 1.0f, 1.0f};
+    Vec3 position;
+    Vec3 color = {1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
     float range = 10.0f;
 };
 
 struct SoftDirectionalLight {
-    SoftVec3 direction = {0.0f, -1.0f, 0.5f};
-    SoftVec3 color = {1.0f, 0.95f, 0.9f};
+    Vec3 direction = {0.0f, -1.0f, 0.5f};
+    Vec3 color = {1.0f, 0.95f, 0.9f};
     float intensity = 1.0f;
 };
 
@@ -163,13 +153,13 @@ inline SoftMesh CreateCube(float size = 1.0f) {
     float h = size * 0.5f;
 
     // 8 corner positions
-    SoftVec3 corners[8] = {
+    Vec3 corners[8] = {
         {-h, -h, -h}, { h, -h, -h}, { h,  h, -h}, {-h,  h, -h},
         {-h, -h,  h}, { h, -h,  h}, { h,  h,  h}, {-h,  h,  h}
     };
 
     // 6 faces, each with 4 vertices and a normal
-    struct Face { int v[4]; SoftVec3 normal; };
+    struct Face { int v[4]; Vec3 normal; };
     Face faces[6] = {
         {{0, 1, 2, 3}, { 0,  0, -1}}, // front
         {{5, 4, 7, 6}, { 0,  0,  1}}, // back
@@ -179,7 +169,7 @@ inline SoftMesh CreateCube(float size = 1.0f) {
         {{4, 5, 1, 0}, { 0, -1,  0}}, // bottom
     };
 
-    SoftVec2 uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    Vec2 uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
 
     for (int f = 0; f < 6; ++f) {
         uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
@@ -207,13 +197,13 @@ inline SoftMesh CreateSphere(float radius = 0.5f, int segments = 16, int rings =
         for (int s = 0; s <= segments; ++s) {
             float theta = 2.0f * 3.14159265f * float(s) / float(segments);
 
-            SoftVec3 pos = {
+            Vec3 pos = {
                 radius * std::sin(phi) * std::cos(theta),
                 radius * std::cos(phi),
                 radius * std::sin(phi) * std::sin(theta)
             };
-            SoftVec3 normal = pos.Normalized();
-            SoftVec2 uv = {float(s) / float(segments), float(r) / float(rings)};
+            Vec3 normal = pos.Normalized();
+            Vec2 uv = {float(s) / float(segments), float(r) / float(rings)};
 
             mesh.vertices.push_back({pos, normal, uv});
         }

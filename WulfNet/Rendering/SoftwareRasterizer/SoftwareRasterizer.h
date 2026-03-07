@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h"
+#include "WulfNet/Rendering/Types/RenderTypes.h"
 #include "WulfNet/Rendering/SoftwareRasterizer/GBuffer.h"
 #include <vector>
 #include <functional>
@@ -42,8 +42,8 @@ public:
     // ==========================================================================
 
     /// Clear all buffers
-    void Clear(const SoftVec3& skyTop = {0.4f, 0.6f, 0.9f},
-               const SoftVec3& skyBottom = {0.8f, 0.85f, 0.95f});
+    void Clear(const Vec3& skyTop = {0.4f, 0.6f, 0.9f},
+               const Vec3& skyBottom = {0.8f, 0.85f, 0.95f});
 
     /// Render objects to the GBuffer
     void RenderObjects(const SoftTransform* objects, int count, const SoftCamera& camera);
@@ -61,15 +61,15 @@ public:
 private:
     // Per-triangle rasterization
     void RasterizeTriangle(const SoftVertex& v0, const SoftVertex& v1, const SoftVertex& v2,
-                           const SoftVec3& faceNormal, const SoftMaterial& material,
+                           const Vec3& faceNormal, const SoftMaterial& material,
                            const SoftCamera& camera, const SoftColorRGBA8& tint);
 
     // World-to-screen projection
-    SoftVec3 ProjectToScreen(const SoftVec3& worldPos, const SoftCamera& camera) const;
+    Vec3 ProjectToScreen(const Vec3& worldPos, const SoftCamera& camera) const;
 
     // Transform vertex to world space
-    SoftVec3 TransformPoint(const SoftVec3& point, const SoftTransform& transform) const;
-    SoftVec3 TransformNormal(const SoftVec3& normal, const SoftTransform& transform) const;
+    Vec3 TransformPoint(const Vec3& point, const SoftTransform& transform) const;
+    Vec3 TransformNormal(const Vec3& normal, const SoftTransform& transform) const;
 
     SoftRasterizerConfig m_config;
     GBuffer m_gbuffer;

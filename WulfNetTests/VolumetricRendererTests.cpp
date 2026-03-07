@@ -6,9 +6,9 @@
 // =============================================================================
 
 #include "TestHarness.h"
-#include <WulfNet/Rendering/SoftwareRasterizer/VolumetricRenderer.h>
+#include <WulfNet/Rendering/Effects/VolumetricRenderer.h>
 #include <WulfNet/Rendering/SoftwareRasterizer/GBuffer.h>
-#include <WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h>
+#include <WulfNet/Rendering/Types/RenderTypes.h>
 #include <cmath>
 
 using namespace WulfNet;
@@ -17,7 +17,7 @@ using namespace WulfNet;
 // Helper: create a uniform density volume
 // =============================================================================
 static VolumeSampler CreateUniformVolume(float density, float temperature,
-                                          SoftVec3 bMin, SoftVec3 bMax) {
+                                          Vec3 bMin, Vec3 bMax) {
     VolumeSampler sampler;
     sampler.region.boundsMin = bMin;
     sampler.region.boundsMax = bMax;
@@ -76,11 +76,11 @@ static void Test_Vol_AddAndClearVolumes() {
 // =============================================================================
 
 static void Test_Vol_RayAABB_Hit() {
-    SoftVec3 origin = {0, 0, -10};
-    SoftVec3 dir = {0, 0, 1};
-    SoftVec3 invDir = {1e8f, 1e8f, 1.0f};
-    SoftVec3 boxMin = {-5, -5, -5};
-    SoftVec3 boxMax = {5, 5, 5};
+    Vec3 origin = {0, 0, -10};
+    Vec3 dir = {0, 0, 1};
+    Vec3 invDir = {1e8f, 1e8f, 1.0f};
+    Vec3 boxMin = {-5, -5, -5};
+    Vec3 boxMax = {5, 5, 5};
 
     float tNear, tFar;
     bool hit = VolumetricRenderer::RayAABBIntersect(origin, invDir, boxMin, boxMax, tNear, tFar);
@@ -90,11 +90,11 @@ static void Test_Vol_RayAABB_Hit() {
 }
 
 static void Test_Vol_RayAABB_Miss() {
-    SoftVec3 origin = {0, 0, -10};
-    SoftVec3 dir = {1, 0, 0}; // Ray going sideways, not toward box
-    SoftVec3 invDir = {1.0f, 1e8f, 1e8f};
-    SoftVec3 boxMin = {-5, -5, 5};
-    SoftVec3 boxMax = {5, 5, 15};
+    Vec3 origin = {0, 0, -10};
+    Vec3 dir = {1, 0, 0}; // Ray going sideways, not toward box
+    Vec3 invDir = {1.0f, 1e8f, 1e8f};
+    Vec3 boxMin = {-5, -5, 5};
+    Vec3 boxMax = {5, 5, 15};
 
     float tNear, tFar;
     bool hit = VolumetricRenderer::RayAABBIntersect(origin, invDir, boxMin, boxMax, tNear, tFar);
@@ -106,11 +106,11 @@ static void Test_Vol_RayAABB_Miss() {
 }
 
 static void Test_Vol_RayAABB_Behind() {
-    SoftVec3 origin = {0, 0, 10};
-    SoftVec3 dir = {0, 0, 1};
-    SoftVec3 invDir = {1e8f, 1e8f, 1.0f};
-    SoftVec3 boxMin = {-5, -5, -5};
-    SoftVec3 boxMax = {5, 5, 5};
+    Vec3 origin = {0, 0, 10};
+    Vec3 dir = {0, 0, 1};
+    Vec3 invDir = {1e8f, 1e8f, 1.0f};
+    Vec3 boxMin = {-5, -5, -5};
+    Vec3 boxMax = {5, 5, 5};
 
     float tNear, tFar;
     bool hit = VolumetricRenderer::RayAABBIntersect(origin, invDir, boxMin, boxMax, tNear, tFar);
@@ -119,11 +119,11 @@ static void Test_Vol_RayAABB_Behind() {
 }
 
 static void Test_Vol_RayAABB_InsideBox() {
-    SoftVec3 origin = {0, 0, 0}; // Inside the box
-    SoftVec3 dir = {0, 0, 1};
-    SoftVec3 invDir = {1e8f, 1e8f, 1.0f};
-    SoftVec3 boxMin = {-5, -5, -5};
-    SoftVec3 boxMax = {5, 5, 5};
+    Vec3 origin = {0, 0, 0}; // Inside the box
+    Vec3 dir = {0, 0, 1};
+    Vec3 invDir = {1e8f, 1e8f, 1.0f};
+    Vec3 boxMin = {-5, -5, -5};
+    Vec3 boxMax = {5, 5, 5};
 
     float tNear, tFar;
     bool hit = VolumetricRenderer::RayAABBIntersect(origin, invDir, boxMin, boxMax, tNear, tFar);
@@ -170,7 +170,7 @@ static void Test_Vol_Emission_BelowThreshold() {
     config.emissionRamp = {{300.0f, {1, 0, 0}, 1.0f}};
     renderer.Initialize(32, 32, config);
 
-    SoftVec3 emission = renderer.EvaluateEmission(100.0f); // Below 300
+    Vec3 emission = renderer.EvaluateEmission(100.0f); // Below 300
     EXPECT_NEAR(emission.x, 0.0f, 0.01f);
     EXPECT_NEAR(emission.y, 0.0f, 0.01f);
     EXPECT_NEAR(emission.z, 0.0f, 0.01f);
@@ -186,7 +186,7 @@ static void Test_Vol_Emission_AboveMax() {
     config.emissionIntensity = 1.0f;
     renderer.Initialize(32, 32, config);
 
-    SoftVec3 emission = renderer.EvaluateEmission(1000.0f); // Above 600
+    Vec3 emission = renderer.EvaluateEmission(1000.0f); // Above 600
     // Should use last keyframe
     EXPECT_NEAR(emission.x, 1.0f * 2.0f, 0.01f); // color * intensity * emissionIntensity
     EXPECT_NEAR(emission.y, 1.0f * 2.0f, 0.01f);
@@ -203,7 +203,7 @@ static void Test_Vol_Emission_Interpolation() {
     renderer.Initialize(32, 32, config);
 
     // Midpoint: 450 = 50% between 300 and 600
-    SoftVec3 emission = renderer.EvaluateEmission(450.0f);
+    Vec3 emission = renderer.EvaluateEmission(450.0f);
     EXPECT_NEAR(emission.x, 0.5f, 0.1f); // Lerp between red and green
     EXPECT_NEAR(emission.y, 0.5f, 0.1f);
 }
@@ -214,7 +214,7 @@ static void Test_Vol_Emission_EmptyRamp() {
     config.emissionRamp.clear();
     renderer.Initialize(32, 32, config);
 
-    SoftVec3 emission = renderer.EvaluateEmission(500.0f);
+    Vec3 emission = renderer.EvaluateEmission(500.0f);
     EXPECT_NEAR(emission.x, 0.0f, 0.01f);
 }
 

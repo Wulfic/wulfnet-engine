@@ -9,8 +9,6 @@
 //   - Row-major matrix storage (consistent with existing codebase convention)
 //   - Jolt-compatible conversions via free functions (not in this header)
 //   - Superset of all previously-separate math types
-//
-// Replaces: SoftVec2/3/4 (Rendering), Mat3 (MPM), GPUMat4x4/Vec3 (IFS)
 // =============================================================================
 
 #pragma once

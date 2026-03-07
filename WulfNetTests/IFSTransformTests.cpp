@@ -1,7 +1,7 @@
 // =============================================================================
 // WulfNet Engine - IFS Transform Tests
 // =============================================================================
-// Tests for GPUMat4x4, AffineTransform, TransformPresets,
+// Tests for Mat4, AffineTransform, TransformPresets,
 // TransformBlender, Vec3, and TransformInstructions.
 // =============================================================================
 
@@ -16,10 +16,10 @@
 using namespace WulfNet;
 
 // =============================================================================
-// Helper: transform a point by a GPUMat4x4 (row-major)
+// Helper: transform a point by a Mat4 (row-major)
 // =============================================================================
 
-static Vec3 TransformPoint(const GPUMat4x4& m, const Vec3& p) {
+static Vec3 TransformPoint(const Mat4& m, const Vec3& p) {
     float x = m.At(0, 0) * p.x + m.At(0, 1) * p.y + m.At(0, 2) * p.z + m.At(0, 3);
     float y = m.At(1, 0) * p.x + m.At(1, 1) * p.y + m.At(1, 2) * p.z + m.At(1, 3);
     float z = m.At(2, 0) * p.x + m.At(2, 1) * p.y + m.At(2, 2) * p.z + m.At(2, 3);
@@ -27,11 +27,11 @@ static Vec3 TransformPoint(const GPUMat4x4& m, const Vec3& p) {
 }
 
 // =============================================================================
-// GPUMat4x4 Tests
+// Mat4 Tests
 // =============================================================================
 
 void test_GPUMat4x4_Identity() {
-    GPUMat4x4 id = GPUMat4x4::Identity();
+    Mat4 id = Mat4::Identity();
     // Diagonal should be 1, all else 0
     for (int r = 0; r < 4; r++) {
         for (int c = 0; c < 4; c++) {
@@ -43,10 +43,10 @@ void test_GPUMat4x4_Identity() {
 }
 
 void test_GPUMat4x4_Multiply_Identity() {
-    GPUMat4x4 id = GPUMat4x4::Identity();
-    GPUMat4x4 scale = AffineTransform::MakeScale({2.0f, 3.0f, 4.0f});
+    Mat4 id = Mat4::Identity();
+    Mat4 scale = AffineTransform::MakeScale({2.0f, 3.0f, 4.0f});
 
-    GPUMat4x4 result = id * scale;
+    Mat4 result = id * scale;
     for (int i = 0; i < 16; i++) {
         EXPECT_TRUE(std::abs(result.m[i] - scale.m[i]) < 1e-6f);
     }
@@ -62,7 +62,7 @@ void test_GPUMat4x4_Multiply_Identity() {
 // =============================================================================
 
 void test_AffineTransform_MakeScale() {
-    GPUMat4x4 mat = AffineTransform::MakeScale({2.0f, 3.0f, 4.0f});
+    Mat4 mat = AffineTransform::MakeScale({2.0f, 3.0f, 4.0f});
     EXPECT_TRUE(std::abs(mat.At(0, 0) - 2.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(mat.At(1, 1) - 3.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(mat.At(2, 2) - 4.0f) < 1e-6f);
@@ -74,7 +74,7 @@ void test_AffineTransform_MakeScale() {
 }
 
 void test_AffineTransform_MakeTranslate() {
-    GPUMat4x4 mat = AffineTransform::MakeTranslate({5.0f, 6.0f, 7.0f});
+    Mat4 mat = AffineTransform::MakeTranslate({5.0f, 6.0f, 7.0f});
     // Row-major: translation in column 3
     EXPECT_TRUE(std::abs(mat.At(0, 3) - 5.0f) < 1e-6f);
     EXPECT_TRUE(std::abs(mat.At(1, 3) - 6.0f) < 1e-6f);
@@ -86,8 +86,8 @@ void test_AffineTransform_MakeTranslate() {
 }
 
 void test_AffineTransform_MakeRotation_Zero() {
-    GPUMat4x4 mat = AffineTransform::MakeRotation({0.0f, 0.0f, 0.0f});
-    GPUMat4x4 id = GPUMat4x4::Identity();
+    Mat4 mat = AffineTransform::MakeRotation({0.0f, 0.0f, 0.0f});
+    Mat4 id = Mat4::Identity();
     for (int i = 0; i < 16; i++) {
         EXPECT_TRUE(std::abs(mat.m[i] - id.m[i]) < 1e-5f);
     }
@@ -95,7 +95,7 @@ void test_AffineTransform_MakeRotation_Zero() {
 
 void test_AffineTransform_MakeRotation_90Y() {
     // 90-degree rotation around Y: x -> z, z -> -x
-    GPUMat4x4 mat = AffineTransform::MakeRotation({0.0f, 90.0f, 0.0f});
+    Mat4 mat = AffineTransform::MakeRotation({0.0f, 90.0f, 0.0f});
     // row 0: [ cos90, 0, sin90, 0 ] = [ 0, 0, 1, 0 ]
     EXPECT_TRUE(std::abs(mat.At(0, 0) - 0.0f) < 1e-5f);
     EXPECT_TRUE(std::abs(mat.At(0, 2) - 1.0f) < 1e-5f);
@@ -106,8 +106,8 @@ void test_AffineTransform_MakeRotation_90Y() {
 
 void test_AffineTransform_FromInstructions_Identity() {
     TransformInstructions inst = TransformInstructions::Identity();
-    GPUMat4x4 mat = AffineTransform::FromInstructions(inst);
-    GPUMat4x4 id = GPUMat4x4::Identity();
+    Mat4 mat = AffineTransform::FromInstructions(inst);
+    Mat4 id = Mat4::Identity();
     for (int i = 0; i < 16; i++) {
         EXPECT_TRUE(std::abs(mat.m[i] - id.m[i]) < 1e-5f);
     }
@@ -118,7 +118,7 @@ void test_AffineTransform_FromInstructions_ScaleTranslate() {
     inst.scale = {0.5f, 0.5f, 0.5f};
     inst.translate = {1.0f, 0.0f, 0.0f};
 
-    GPUMat4x4 mat = AffineTransform::FromInstructions(inst);
+    Mat4 mat = AffineTransform::FromInstructions(inst);
     // Scale should be 0.5 on diagonal
     EXPECT_TRUE(std::abs(mat.At(0, 0) - 0.5f) < 1e-5f);
     EXPECT_TRUE(std::abs(mat.At(1, 1) - 0.5f) < 1e-5f);
@@ -128,23 +128,23 @@ void test_AffineTransform_FromInstructions_ScaleTranslate() {
 }
 
 void test_AffineTransform_Interpolate() {
-    GPUMat4x4 id = GPUMat4x4::Identity();
-    GPUMat4x4 scale2 = AffineTransform::MakeScale({2.0f, 2.0f, 2.0f});
+    Mat4 id = Mat4::Identity();
+    Mat4 scale2 = AffineTransform::MakeScale({2.0f, 2.0f, 2.0f});
 
     // t = 0 -> identity
-    GPUMat4x4 r0 = AffineTransform::Interpolate(id, scale2, 0.0f);
+    Mat4 r0 = AffineTransform::Interpolate(id, scale2, 0.0f);
     for (int i = 0; i < 16; i++) {
         EXPECT_TRUE(std::abs(r0.m[i] - id.m[i]) < 1e-6f);
     }
 
     // t = 1 -> scale2
-    GPUMat4x4 r1 = AffineTransform::Interpolate(id, scale2, 1.0f);
+    Mat4 r1 = AffineTransform::Interpolate(id, scale2, 1.0f);
     for (int i = 0; i < 16; i++) {
         EXPECT_TRUE(std::abs(r1.m[i] - scale2.m[i]) < 1e-6f);
     }
 
     // t = 0.5 -> midpoint, diagonal should be 1.5
-    GPUMat4x4 rh = AffineTransform::Interpolate(id, scale2, 0.5f);
+    Mat4 rh = AffineTransform::Interpolate(id, scale2, 0.5f);
     EXPECT_TRUE(std::abs(rh.At(0, 0) - 1.5f) < 1e-6f);
     EXPECT_TRUE(std::abs(rh.At(1, 1) - 1.5f) < 1e-6f);
     EXPECT_TRUE(std::abs(rh.At(2, 2) - 1.5f) < 1e-6f);
@@ -387,7 +387,7 @@ void test_TransformInstructions_Combine() {
 // =============================================================================
 
 void RegisterIFSTransformTests() {
-    // GPUMat4x4 tests
+    // Mat4 tests
     RUN_TEST("GPUMat4x4_Identity", test_GPUMat4x4_Identity);
     RUN_TEST("GPUMat4x4_Multiply_Identity", test_GPUMat4x4_Multiply_Identity);
 

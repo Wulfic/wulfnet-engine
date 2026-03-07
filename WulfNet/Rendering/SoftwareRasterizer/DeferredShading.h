@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "WulfNet/Rendering/SoftwareRasterizer/SoftRasterTypes.h"
+#include "WulfNet/Rendering/Types/RenderTypes.h"
 #include "WulfNet/Rendering/SoftwareRasterizer/GBuffer.h"
 #include <vector>
 
@@ -19,14 +19,14 @@ struct DeferredShadingConfig {
     SoftDirectionalLight sunLight;
 
     // Ambient
-    SoftVec3 ambientSkyColor = {0.3f, 0.4f, 0.6f};
-    SoftVec3 ambientGroundColor = {0.15f, 0.1f, 0.08f};
+    Vec3 ambientSkyColor = {0.3f, 0.4f, 0.6f};
+    Vec3 ambientGroundColor = {0.15f, 0.1f, 0.08f};
     float ambientIntensity = 0.3f;
 
     // Fog
     float fogStart = 50.0f;
     float fogEnd = 200.0f;
-    SoftVec3 fogColor = {0.7f, 0.8f, 0.9f};
+    Vec3 fogColor = {0.7f, 0.8f, 0.9f};
 
     // Reflections / Specular
     float fresnelPower = 3.0f;
@@ -45,10 +45,10 @@ public:
                const SoftCamera& camera);
 
 private:
-    SoftVec3 ComputeLighting(const SoftVec3& worldNormal, const SoftVec3& viewDir,
-                              float depth, const SoftVec3& albedo,
+    Vec3 ComputeLighting(const Vec3& worldNormal, const Vec3& viewDir,
+                              float depth, const Vec3& albedo,
                               const DeferredShadingConfig& config,
-                              const SoftVec3& worldPos) const;
+                              const Vec3& worldPos) const;
 };
 
 } // namespace WulfNet

@@ -18,7 +18,7 @@ static float ShadowClamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f 
 static constexpr float kPi = 3.14159265358979323846f;
 
 /// Rotate a vector by Euler angles (degrees) in ZYX order (matching SoftwareRasterizer)
-static SoftVec3 RotateEuler(const SoftVec3& v, const SoftVec3& eulerDeg) {
+static Vec3 RotateEuler(const Vec3& v, const Vec3& eulerDeg) {
     float rx = eulerDeg.x * kPi / 180.0f;
     float ry = eulerDeg.y * kPi / 180.0f;
     float rz = eulerDeg.z * kPi / 180.0f;
@@ -28,7 +28,7 @@ static SoftVec3 RotateEuler(const SoftVec3& v, const SoftVec3& eulerDeg) {
     float cz = std::cos(rz), sz = std::sin(rz);
 
     // ZYX rotation matrix
-    SoftVec3 result;
+    Vec3 result;
     result.x = (cy * cz) * v.x + (sx * sy * cz - cx * sz) * v.y + (cx * sy * cz + sx * sz) * v.z;
     result.y = (cy * sz) * v.x + (sx * sy * sz + cx * cz) * v.y + (cx * sy * sz - sx * cz) * v.z;
     result.z = (-sy)     * v.x + (sx * cy)                * v.y + (cx * cy)                * v.z;
@@ -46,7 +46,7 @@ bool ShadowCascade::Initialize(int resolution) {
     return true;
 }
 
-void ShadowCascade::ComputeLightMatrix(const SoftVec3& lightDir, const SoftVec3& focusCenter,
+void ShadowCascade::ComputeLightMatrix(const Vec3& lightDir, const Vec3& focusCenter,
                                         float orthoSize, float nearClip, float farClip) {
     m_orthoSize = orthoSize;
     m_nearClip = nearClip;
@@ -56,7 +56,7 @@ void ShadowCascade::ComputeLightMatrix(const SoftVec3& lightDir, const SoftVec3&
     m_lightForward = lightDir.Normalized();
 
     // Choose an 'up' hint that isn't parallel to light direction
-    SoftVec3 upHint = {0.0f, 1.0f, 0.0f};
+    Vec3 upHint = {0.0f, 1.0f, 0.0f};
     if (std::abs(m_lightForward.Dot(upHint)) > 0.99f) {
         upHint = {1.0f, 0.0f, 0.0f};
     }
@@ -73,9 +73,9 @@ void ShadowCascade::Clear() {
     std::fill(m_depthBuffer.begin(), m_depthBuffer.end(), std::numeric_limits<float>::max());
 }
 
-SoftVec3 ShadowCascade::WorldToLightNDC(const SoftVec3& worldPos) const {
+Vec3 ShadowCascade::WorldToLightNDC(const Vec3& worldPos) const {
     // Transform to light space
-    SoftVec3 toPoint = worldPos - m_lightPosition;
+    Vec3 toPoint = worldPos - m_lightPosition;
     float lightX = toPoint.Dot(m_lightRight);
     float lightY = toPoint.Dot(m_lightUp);
     float lightZ = toPoint.Dot(m_lightForward);
@@ -108,8 +108,8 @@ bool ShadowCascade::WriteDepth(float ndcX, float ndcY, float depth) {
     return false;
 }
 
-float ShadowCascade::SampleShadow(const SoftVec3& worldPos, float bias) const {
-    SoftVec3 ndc = WorldToLightNDC(worldPos);
+float ShadowCascade::SampleShadow(const Vec3& worldPos, float bias) const {
+    Vec3 ndc = WorldToLightNDC(worldPos);
 
     // Outside cascade frustum = lit
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) return 1.0f;
@@ -140,12 +140,12 @@ bool PointLightShadow::Initialize(int resolution) {
     m_resolution = resolution;
 
     // +X, -X, +Y, -Y, +Z, -Z
-    SoftVec3 forwards[6] = {
+    Vec3 forwards[6] = {
         { 1, 0, 0}, {-1, 0, 0},
         { 0, 1, 0}, { 0,-1, 0},
         { 0, 0, 1}, { 0, 0,-1}
     };
-    SoftVec3 ups[6] = {
+    Vec3 ups[6] = {
         {0, 1, 0}, {0, 1, 0},
         {0, 0,-1}, {0, 0, 1},
         {0, 1, 0}, {0, 1, 0}
@@ -168,12 +168,12 @@ void PointLightShadow::Clear() {
     }
 }
 
-void PointLightShadow::SetLightPosition(const SoftVec3& position, float range) {
+void PointLightShadow::SetLightPosition(const Vec3& position, float range) {
     m_position = position;
     m_range = range;
 }
 
-int PointLightShadow::DirectionToFace(const SoftVec3& dir) {
+int PointLightShadow::DirectionToFace(const Vec3& dir) {
     float absX = std::abs(dir.x);
     float absY = std::abs(dir.y);
     float absZ = std::abs(dir.z);
@@ -187,10 +187,10 @@ int PointLightShadow::DirectionToFace(const SoftVec3& dir) {
     return dir.z > 0.0f ? 4 : 5;     // +Z or -Z
 }
 
-SoftVec3 PointLightShadow::WorldToFaceNDC(const SoftVec3& worldPos, int face) const {
+Vec3 PointLightShadow::WorldToFaceNDC(const Vec3& worldPos, int face) const {
     if (face < 0 || face >= 6) return {0, 0, 0};
 
-    SoftVec3 toPoint = worldPos - m_position;
+    Vec3 toPoint = worldPos - m_position;
     const CubeFace& f = m_faces[face];
 
     // Project onto face basis
@@ -229,16 +229,16 @@ bool PointLightShadow::WriteDepth(int face, float ndcX, float ndcY, float depth)
     return false;
 }
 
-float PointLightShadow::SampleShadow(const SoftVec3& worldPos, float bias) const {
-    SoftVec3 toPoint = worldPos - m_position;
+float PointLightShadow::SampleShadow(const Vec3& worldPos, float bias) const {
+    Vec3 toPoint = worldPos - m_position;
     float dist = toPoint.Length();
 
     if (dist > m_range || dist < 0.001f) return 1.0f;
 
-    SoftVec3 dir = toPoint / dist;
+    Vec3 dir = toPoint / dist;
     int face = DirectionToFace(dir);
 
-    SoftVec3 ndc = WorldToFaceNDC(worldPos, face);
+    Vec3 ndc = WorldToFaceNDC(worldPos, face);
 
     // Outside face frustum
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) return 1.0f;
@@ -306,9 +306,9 @@ void ShadowSystem::ComputeCascadeSplits(const SoftCamera& camera) {
     }
 }
 
-int ShadowSystem::SelectCascade(const SoftVec3& worldPos, const SoftCamera& camera) const {
+int ShadowSystem::SelectCascade(const Vec3& worldPos, const SoftCamera& camera) const {
     // Distance from camera along the camera's forward axis
-    SoftVec3 toPoint = worldPos - camera.position;
+    Vec3 toPoint = worldPos - camera.position;
     float viewDist = toPoint.Dot(camera.forward);
 
     for (int i = 0; i < static_cast<int>(m_cascades.size()); ++i) {
@@ -324,27 +324,27 @@ void ShadowSystem::ClearAll() {
     for (auto& shadow : m_pointShadows)  shadow.Clear();
 }
 
-SoftVec3 ShadowSystem::TransformPoint(const SoftVec3& point, const SoftTransform& transform) const {
+Vec3 ShadowSystem::TransformPoint(const Vec3& point, const SoftTransform& transform) const {
     // Scale
-    SoftVec3 scaled = {
+    Vec3 scaled = {
         point.x * transform.scale.x,
         point.y * transform.scale.y,
         point.z * transform.scale.z
     };
 
     // Rotate (Euler ZYX)
-    SoftVec3 rotated = RotateEuler(scaled, transform.rotation);
+    Vec3 rotated = RotateEuler(scaled, transform.rotation);
 
     // Translate
     return rotated + transform.position;
 }
 
 void ShadowSystem::RasterizeShadowTriangle(ShadowCascade& cascade,
-                                             const SoftVec3& v0, const SoftVec3& v1, const SoftVec3& v2) {
+                                             const Vec3& v0, const Vec3& v1, const Vec3& v2) {
     // Project all 3 vertices to light NDC
-    SoftVec3 ndc0 = cascade.WorldToLightNDC(v0);
-    SoftVec3 ndc1 = cascade.WorldToLightNDC(v1);
-    SoftVec3 ndc2 = cascade.WorldToLightNDC(v2);
+    Vec3 ndc0 = cascade.WorldToLightNDC(v0);
+    Vec3 ndc1 = cascade.WorldToLightNDC(v1);
+    Vec3 ndc2 = cascade.WorldToLightNDC(v2);
 
     // Early reject if all vertices are outside
     if ((ndc0.z < 0 && ndc1.z < 0 && ndc2.z < 0) ||
@@ -394,10 +394,10 @@ void ShadowSystem::RasterizeShadowTriangle(ShadowCascade& cascade,
 }
 
 void ShadowSystem::RasterizeShadowTriangleFace(PointLightShadow& shadow, int face,
-                                                  const SoftVec3& v0, const SoftVec3& v1, const SoftVec3& v2) {
-    SoftVec3 ndc0 = shadow.WorldToFaceNDC(v0, face);
-    SoftVec3 ndc1 = shadow.WorldToFaceNDC(v1, face);
-    SoftVec3 ndc2 = shadow.WorldToFaceNDC(v2, face);
+                                                  const Vec3& v0, const Vec3& v1, const Vec3& v2) {
+    Vec3 ndc0 = shadow.WorldToFaceNDC(v0, face);
+    Vec3 ndc1 = shadow.WorldToFaceNDC(v1, face);
+    Vec3 ndc2 = shadow.WorldToFaceNDC(v2, face);
 
     // Early reject
     if ((ndc0.z < 0 && ndc1.z < 0 && ndc2.z < 0) ||
@@ -449,7 +449,7 @@ void ShadowSystem::RenderDirectionalShadows(const SoftDirectionalLight& light,
                                               const std::vector<SoftMesh>& meshes) {
     ComputeCascadeSplits(camera);
 
-    SoftVec3 lightDir = light.direction.Normalized();
+    Vec3 lightDir = light.direction.Normalized();
 
     // Set up each cascade's light matrix
     for (int c = 0; c < static_cast<int>(m_cascades.size()); ++c) {
@@ -458,7 +458,7 @@ void ShadowSystem::RenderDirectionalShadows(const SoftDirectionalLight& light,
         float midDist = (nearDist + farDist) * 0.5f;
 
         // Focus center = camera position + forward * midDist
-        SoftVec3 focusCenter = camera.position + camera.forward * midDist;
+        Vec3 focusCenter = camera.position + camera.forward * midDist;
 
         // Ortho size scales with cascade distance
         float orthoSize = farDist * 0.6f;
@@ -479,9 +479,9 @@ void ShadowSystem::RenderDirectionalShadows(const SoftDirectionalLight& light,
             const auto& verts = mesh.vertices;
 
             for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-                SoftVec3 wv0 = TransformPoint(verts[indices[i + 0]].position, xform);
-                SoftVec3 wv1 = TransformPoint(verts[indices[i + 1]].position, xform);
-                SoftVec3 wv2 = TransformPoint(verts[indices[i + 2]].position, xform);
+                Vec3 wv0 = TransformPoint(verts[indices[i + 0]].position, xform);
+                Vec3 wv1 = TransformPoint(verts[indices[i + 1]].position, xform);
+                Vec3 wv2 = TransformPoint(verts[indices[i + 2]].position, xform);
 
                 RasterizeShadowTriangle(m_cascades[c], wv0, wv1, wv2);
             }
@@ -516,13 +516,13 @@ void ShadowSystem::RenderPointLightShadow(int lightIndex,
         const auto& verts = mesh.vertices;
 
         for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-            SoftVec3 wv0 = TransformPoint(verts[indices[i + 0]].position, xform);
-            SoftVec3 wv1 = TransformPoint(verts[indices[i + 1]].position, xform);
-            SoftVec3 wv2 = TransformPoint(verts[indices[i + 2]].position, xform);
+            Vec3 wv0 = TransformPoint(verts[indices[i + 0]].position, xform);
+            Vec3 wv1 = TransformPoint(verts[indices[i + 1]].position, xform);
+            Vec3 wv2 = TransformPoint(verts[indices[i + 2]].position, xform);
 
             // Determine which faces this triangle could affect
-            SoftVec3 triCenter = (wv0 + wv1 + wv2) * (1.0f / 3.0f);
-            SoftVec3 toTri = triCenter - light.position;
+            Vec3 triCenter = (wv0 + wv1 + wv2) * (1.0f / 3.0f);
+            Vec3 toTri = triCenter - light.position;
             float dist = toTri.Length();
 
             if (dist > light.range) continue;
@@ -541,11 +541,11 @@ void ShadowSystem::RenderPointLightShadow(int lightIndex,
     }
 }
 
-float ShadowSystem::SampleDirectionalShadow(const SoftVec3& worldPos) const {
+float ShadowSystem::SampleDirectionalShadow(const Vec3& worldPos) const {
     if (m_cascades.empty()) return 1.0f;
 
     // Select cascade based on view distance
-    SoftVec3 toPoint = worldPos - m_cachedCameraPos;
+    Vec3 toPoint = worldPos - m_cachedCameraPos;
     float viewDist = toPoint.Dot(m_cachedCameraFwd);
 
     int cascadeIdx = -1;
@@ -561,7 +561,7 @@ float ShadowSystem::SampleDirectionalShadow(const SoftVec3& worldPos) const {
     return m_cascades[cascadeIdx].SampleShadow(worldPos, m_config.shadowBias);
 }
 
-float ShadowSystem::SamplePointLightShadow(int lightIndex, const SoftVec3& worldPos) const {
+float ShadowSystem::SamplePointLightShadow(int lightIndex, const Vec3& worldPos) const {
     if (lightIndex < 0 || lightIndex >= static_cast<int>(m_pointShadows.size())) return 1.0f;
     return m_pointShadows[lightIndex].SampleShadow(worldPos, m_config.shadowBias);
 }

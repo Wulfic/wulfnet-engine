@@ -44,15 +44,15 @@ void VolumetricRenderer::ClearVolumes() {
     m_volumes.clear();
 }
 
-SoftVec3 VolumetricRenderer::PixelToRayDir(int x, int y, const SoftCamera& camera) const {
+Vec3 VolumetricRenderer::PixelToRayDir(int x, int y, const SoftCamera& camera) const {
     float fovScale = 1.0f / std::tan(camera.fov * 0.5f * kVolPi / 180.0f);
     float ndcX = (2.0f * (x + 0.5f) / static_cast<float>(m_width) - 1.0f) * camera.aspectRatio;
     float ndcY = 1.0f - 2.0f * (y + 0.5f) / static_cast<float>(m_height);
     return (camera.forward * fovScale + camera.right * ndcX + camera.up * ndcY).Normalized();
 }
 
-bool VolumetricRenderer::RayAABBIntersect(const SoftVec3& origin, const SoftVec3& invDir,
-                                            const SoftVec3& boxMin, const SoftVec3& boxMax,
+bool VolumetricRenderer::RayAABBIntersect(const Vec3& origin, const Vec3& invDir,
+                                            const Vec3& boxMin, const Vec3& boxMax,
                                             float& tNear, float& tFar) {
     float t1 = (boxMin.x - origin.x) * invDir.x;
     float t2 = (boxMax.x - origin.x) * invDir.x;
@@ -75,7 +75,7 @@ bool VolumetricRenderer::RayAABBIntersect(const SoftVec3& origin, const SoftVec3
     return true;
 }
 
-SoftVec3 VolumetricRenderer::EvaluateEmission(float temperature) const {
+Vec3 VolumetricRenderer::EvaluateEmission(float temperature) const {
     const auto& ramp = m_config.emissionRamp;
     if (ramp.empty() || temperature < ramp[0].temperature) return {};
 
@@ -84,7 +84,7 @@ SoftVec3 VolumetricRenderer::EvaluateEmission(float temperature) const {
         if (temperature >= ramp[i].temperature && temperature < ramp[i + 1].temperature) {
             float t = (temperature - ramp[i].temperature) /
                       (ramp[i + 1].temperature - ramp[i].temperature);
-            SoftVec3 color = SoftVec3::Lerp(ramp[i].color, ramp[i + 1].color, t);
+            Vec3 color = Vec3::Lerp(ramp[i].color, ramp[i + 1].color, t);
             float intensity = ramp[i].intensity + (ramp[i + 1].intensity - ramp[i].intensity) * t;
             return color * intensity * m_config.emissionIntensity;
         }
@@ -103,7 +103,7 @@ float VolumetricRenderer::PhaseHG(float cosTheta, float g) {
     return (1.0f / (4.0f * kVolPi)) * (1.0f - g2) / (denom * std::sqrt(denom));
 }
 
-VolumetricSample VolumetricRenderer::MarchRay(const SoftVec3& rayOrigin, const SoftVec3& rayDir,
+VolumetricSample VolumetricRenderer::MarchRay(const Vec3& rayOrigin, const Vec3& rayDir,
                                                 float maxDist, const VolumeSampler& sampler) const {
     VolumetricSample result;
     result.transmittance = 1.0f;
@@ -112,7 +112,7 @@ VolumetricSample VolumetricRenderer::MarchRay(const SoftVec3& rayOrigin, const S
     if (!sampler.sampleDensity) return result;
 
     // Intersect ray with volume AABB
-    SoftVec3 invDir = {
+    Vec3 invDir = {
         std::abs(rayDir.x) > 1e-8f ? 1.0f / rayDir.x : 1e8f,
         std::abs(rayDir.y) > 1e-8f ? 1.0f / rayDir.y : 1e8f,
         std::abs(rayDir.z) > 1e-8f ? 1.0f / rayDir.z : 1e8f
@@ -129,7 +129,7 @@ VolumetricSample VolumetricRenderer::MarchRay(const SoftVec3& rayOrigin, const S
     if (tNear >= tFar) return result;
 
     // Light direction for in-scattering
-    SoftVec3 lightDir = m_config.lightDirection.Normalized() * -1.0f;
+    Vec3 lightDir = m_config.lightDirection.Normalized() * -1.0f;
     float cosTheta = rayDir.Dot(lightDir);
     float phase = PhaseHG(cosTheta, m_config.phaseG);
 
@@ -138,7 +138,7 @@ VolumetricSample VolumetricRenderer::MarchRay(const SoftVec3& rayOrigin, const S
     int steps = 0;
 
     while (t < tFar && steps < m_config.maxSteps && result.transmittance > 0.001f) {
-        SoftVec3 pos = rayOrigin + rayDir * t;
+        Vec3 pos = rayOrigin + rayDir * t;
 
         // Sample density
         float density = sampler.sampleDensity(pos.x, pos.y, pos.z) * m_config.densityMultiplier;
@@ -149,18 +149,18 @@ VolumetricSample VolumetricRenderer::MarchRay(const SoftVec3& rayOrigin, const S
             float sampleTransmittance = std::exp(-extinction);
 
             // In-scattering contribution
-            SoftVec3 scatterColor = m_config.lightColor * m_config.lightIntensity
+            Vec3 scatterColor = m_config.lightColor * m_config.lightIntensity
                                     * m_config.scatteringCoeff * density * phase;
 
             // Emission from temperature
             if (sampler.sampleTemperature) {
                 float temp = sampler.sampleTemperature(pos.x, pos.y, pos.z);
-                SoftVec3 emission = EvaluateEmission(temp);
+                Vec3 emission = EvaluateEmission(temp);
                 scatterColor = scatterColor + emission * density;
             }
 
             // Integrate: accumulate color weighted by transmittance and step
-            SoftVec3 colorContrib = scatterColor * ((1.0f - sampleTransmittance) / std::max(extinction, 0.001f));
+            Vec3 colorContrib = scatterColor * ((1.0f - sampleTransmittance) / std::max(extinction, 0.001f));
             result.color = result.color + colorContrib * result.transmittance;
             result.transmittance *= sampleTransmittance;
         }
@@ -200,7 +200,7 @@ void VolumetricRenderer::Render(GBuffer& gbuffer, const SoftCamera& camera) {
             float sceneDepth = gbuffer.GetDepth(x, y);
             float maxDist = (sceneDepth > 9999.0f) ? 1000.0f : sceneDepth;
 
-            SoftVec3 rayDir = PixelToRayDir(x, y, camera);
+            Vec3 rayDir = PixelToRayDir(x, y, camera);
 
             VolumetricSample accumulated;
             accumulated.transmittance = 1.0f;
@@ -218,10 +218,10 @@ void VolumetricRenderer::Render(GBuffer& gbuffer, const SoftCamera& camera) {
 
             // Composite over scene color
             SoftColorRGBA8 sceneColor = gbuffer.GetColor(x, y);
-            SoftVec3 scene = {sceneColor.r / 255.0f, sceneColor.g / 255.0f, sceneColor.b / 255.0f};
+            Vec3 scene = {sceneColor.r / 255.0f, sceneColor.g / 255.0f, sceneColor.b / 255.0f};
 
             // Front-to-back blending
-            SoftVec3 final_color = accumulated.color + scene * accumulated.transmittance;
+            Vec3 final_color = accumulated.color + scene * accumulated.transmittance;
 
             // Clamp
             final_color.x = VolClamp01(final_color.x);

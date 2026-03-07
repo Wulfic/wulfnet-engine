@@ -6,9 +6,9 @@
 
 #include <WulfNet/WulfNet.h>
 
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <WulfNet/Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <WulfNet/Jolt/Physics/Body/BodyCreationSettings.h>
 
 #include <iostream>
 #include <thread>

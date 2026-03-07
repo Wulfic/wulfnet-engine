@@ -60,7 +60,7 @@ public:
     bool Initialize(int resolution);
 
     /// Build an orthographic light-view-projection for this cascade
-    void ComputeLightMatrix(const SoftVec3& lightDir, const SoftVec3& focusCenter,
+    void ComputeLightMatrix(const Vec3& lightDir, const Vec3& focusCenter,
                             float orthoSize, float nearClip, float farClip);
 
     /// Clear the depth buffer for a new render
@@ -72,10 +72,10 @@ public:
 
     /// Sample the shadow depth at a world position
     /// Returns: 0.0 = fully in shadow, 1.0 = fully lit
-    float SampleShadow(const SoftVec3& worldPos, float bias) const;
+    float SampleShadow(const Vec3& worldPos, float bias) const;
 
     /// Project a world-space point into this cascade's light-space NDC
-    SoftVec3 WorldToLightNDC(const SoftVec3& worldPos) const;
+    Vec3 WorldToLightNDC(const Vec3& worldPos) const;
 
     /// Accessors
     int GetResolution() const { return m_resolution; }
@@ -83,10 +83,10 @@ public:
     float GetNearClip() const { return m_nearClip; }
     float GetFarClip() const { return m_farClip; }
     float GetOrthoSize() const { return m_orthoSize; }
-    SoftVec3 GetLightForward() const { return m_lightForward; }
-    SoftVec3 GetLightRight() const { return m_lightRight; }
-    SoftVec3 GetLightUp() const { return m_lightUp; }
-    SoftVec3 GetLightPosition() const { return m_lightPosition; }
+    Vec3 GetLightForward() const { return m_lightForward; }
+    Vec3 GetLightRight() const { return m_lightRight; }
+    Vec3 GetLightUp() const { return m_lightUp; }
+    Vec3 GetLightPosition() const { return m_lightPosition; }
 
 private:
     int m_resolution = 0;
@@ -95,10 +95,10 @@ private:
     float m_orthoSize = 40.0f;
 
     // Light-space basis
-    SoftVec3 m_lightForward  = {0.0f, 0.0f, 1.0f};
-    SoftVec3 m_lightRight    = {1.0f, 0.0f, 0.0f};
-    SoftVec3 m_lightUp       = {0.0f, 1.0f, 0.0f};
-    SoftVec3 m_lightPosition = {0.0f, 0.0f, 0.0f};
+    Vec3 m_lightForward  = {0.0f, 0.0f, 1.0f};
+    Vec3 m_lightRight    = {1.0f, 0.0f, 0.0f};
+    Vec3 m_lightUp       = {0.0f, 1.0f, 0.0f};
+    Vec3 m_lightPosition = {0.0f, 0.0f, 0.0f};
 
     std::vector<float> m_depthBuffer;
 };
@@ -118,37 +118,37 @@ public:
     void Clear();
 
     /// Compute the 6 face cameras from the light position
-    void SetLightPosition(const SoftVec3& position, float range);
+    void SetLightPosition(const Vec3& position, float range);
 
     /// Write a depth value on the appropriate face
     bool WriteDepth(int face, float ndcX, float ndcY, float depth);
 
     /// Sample shadow at a world position
     /// Returns 0.0 = in shadow, 1.0 = lit
-    float SampleShadow(const SoftVec3& worldPos, float bias) const;
+    float SampleShadow(const Vec3& worldPos, float bias) const;
 
     /// Determine which face (0-5: +X,-X,+Y,-Y,+Z,-Z) a direction maps to
-    static int DirectionToFace(const SoftVec3& dir);
+    static int DirectionToFace(const Vec3& dir);
 
     /// Project world pos to a specific face's NDC
-    SoftVec3 WorldToFaceNDC(const SoftVec3& worldPos, int face) const;
+    Vec3 WorldToFaceNDC(const Vec3& worldPos, int face) const;
 
     /// Accessors
     int GetResolution() const { return m_resolution; }
-    SoftVec3 GetPosition() const { return m_position; }
+    Vec3 GetPosition() const { return m_position; }
     float GetRange() const { return m_range; }
     const float* GetFaceDepthBuffer(int face) const;
 
 private:
     int m_resolution = 0;
-    SoftVec3 m_position = {};
+    Vec3 m_position = {};
     float m_range = 10.0f;
 
     // 6 faces: +X, -X, +Y, -Y, +Z, -Z
     struct CubeFace {
-        SoftVec3 forward;
-        SoftVec3 up;
-        SoftVec3 right;
+        Vec3 forward;
+        Vec3 up;
+        Vec3 right;
         std::vector<float> depthBuffer;
     };
     CubeFace m_faces[6];
@@ -184,13 +184,13 @@ public:
 
     /// Query the directional light shadow factor at a world position
     /// Returns 0.0 = fully shadowed, 1.0 = fully lit
-    float SampleDirectionalShadow(const SoftVec3& worldPos) const;
+    float SampleDirectionalShadow(const Vec3& worldPos) const;
 
     /// Query a point light shadow factor at a world position
-    float SamplePointLightShadow(int lightIndex, const SoftVec3& worldPos) const;
+    float SamplePointLightShadow(int lightIndex, const Vec3& worldPos) const;
 
     /// Select which cascade a world-space point falls into
-    int SelectCascade(const SoftVec3& worldPos, const SoftCamera& camera) const;
+    int SelectCascade(const Vec3& worldPos, const SoftCamera& camera) const;
 
     /// Clear all shadow maps
     void ClearAll();
@@ -206,14 +206,14 @@ public:
 private:
     /// Rasterize a single triangle into a cascade's depth buffer
     void RasterizeShadowTriangle(ShadowCascade& cascade,
-                                  const SoftVec3& v0, const SoftVec3& v1, const SoftVec3& v2);
+                                  const Vec3& v0, const Vec3& v1, const Vec3& v2);
 
     /// Rasterize a single triangle into a point light face
     void RasterizeShadowTriangleFace(PointLightShadow& shadow, int face,
-                                      const SoftVec3& v0, const SoftVec3& v1, const SoftVec3& v2);
+                                      const Vec3& v0, const Vec3& v1, const Vec3& v2);
 
     /// Transform a point by a SoftTransform (position, rotation, scale)
-    SoftVec3 TransformPoint(const SoftVec3& point, const SoftTransform& transform) const;
+    Vec3 TransformPoint(const Vec3& point, const SoftTransform& transform) const;
 
     ShadowSystemConfig m_config;
     std::vector<ShadowCascade> m_cascades;
@@ -221,8 +221,8 @@ private:
     std::vector<PointLightShadow> m_pointShadows;
 
     // Cached camera data for cascade selection
-    SoftVec3 m_cachedCameraPos = {};
-    SoftVec3 m_cachedCameraFwd = {};
+    Vec3 m_cachedCameraPos = {};
+    Vec3 m_cachedCameraFwd = {};
 };
 
 } // namespace WulfNet
